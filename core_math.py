@@ -6,6 +6,9 @@ def get_liquidity_for_capital(capital, price, price_a, price_b):
     e i limiti inferiore (price_a) e superiore (price_b).
     Assume che il prezzo sia espresso in Token1/Token0 (es. USDC per WETH).
     """
+    if price_a >= price_b or capital <= 0:
+        return 0.0
+    
     sqrt_p = math.sqrt(price)
     sqrt_a = math.sqrt(price_a)
     sqrt_b = math.sqrt(price_b)
