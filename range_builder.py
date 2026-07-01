@@ -3,6 +3,49 @@ import numpy as np
 import data_fetcher
 import math
 
+def calcola_probabilita_terminale(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
+    """
+    (VECCHIA METRICA) Calcola la probabilità che il prezzo si trovi dentro il range 
+    ESATTAMENTE all'ultimo giorno. Sovrastima la sicurezza reale.
+    """
+    if volatilita_giornaliera <= 0 or prezzo_attuale <= 0: return 0.0
+    vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
+    z_a = ((price_a - prezzo_attuale) / prezzo_attuale) / vol_periodo
+    z_b = ((price_b - prezzo_attuale) / prezzo_attuale) / vol_periodo
+    cdf_a = (1.0 + math.erf(z_a / math.sqrt(2.0))) / 2.0
+    cdf_b = (1.0 + math.erf(z_b / math.sqrt(2.0))) / 2.0
+    return max(0.0, cdf_b - cdf_a) * 100
+
+def calcola_probabilita_no_touch(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
+    """
+    (NUOVA METRICA) Calcola la probabilità che il prezzo NON tocchi MAI i limiti 
+    durante l'intero orizzonte temporale, usando il Principio di Riflessione.
+    """
+    if volatilita_giornaliera <= 0 or prezzo_attuale <= 0 or price_a >= price_b:
+        return 0.0
+        
+    if prezzo_attuale <= price_a or prezzo_attuale >= price_b:
+        return 0.0
+
+    vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
+    
+    # Distanze percentuali dai limiti
+    dist_inf = (prezzo_attuale - price_a) / prezzo_attuale
+    dist_sup = (price_b - prezzo_attuale) / prezzo_attuale
+    
+    z_inf = dist_inf / vol_periodo
+    z_sup = dist_sup / vol_periodo
+    
+    # P(toccare la barriera) = 2 * P(terminale oltre la barriera)
+    # math.erfc(x) = 1 - math.erf(x), ottimizzato per precisione
+    prob_touch_inf = math.erfc(z_inf / math.sqrt(2.0))
+    prob_touch_sup = math.erfc(z_sup / math.sqrt(2.0))
+    
+    # Probabilità di sopravvivenza (approssimazione conservativa a doppia barriera)
+    prob_no_touch = 1.0 - (prob_touch_inf + prob_touch_sup)
+    
+    return max(0.0, prob_no_touch) * 100.0
+
 def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
     """
     Calcola la probabilità statistica (0-100%) che il prezzo rimanga 

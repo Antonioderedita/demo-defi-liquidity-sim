@@ -64,10 +64,14 @@ fee_giornaliere, apr_stimato = fee_estimator.stima_rendimenti_cl(
     capitale, live_price, price_a, price_b, vol_24h, tvl
 )
 
-# Calcolo probabilità statistica (orizzonte 7 giorni)
-probabilita_in_range = range_builder.calcola_probabilita_in_range(
+# Calcolo probabilità statistica di NON toccare mai le barriere (orizzonte 7 giorni)
+probabilita_in_range = range_builder.calcola_probabilita_no_touch(
     live_price, price_a, price_b, vol_daily, giorni_target=7
 )
+
+# Calcolo dell'APR pesato per il rischio (Valore Atteso reale)
+apr_risk_adjusted = apr_stimato * (probabilita_in_range / 100)
+
 
 # Calcolo dell'APR pesato per il rischio (Valore Atteso reale)
 apr_risk_adjusted = apr_stimato * (probabilita_in_range / 100)
