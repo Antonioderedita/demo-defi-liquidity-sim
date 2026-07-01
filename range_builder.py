@@ -1,6 +1,33 @@
 import yfinance as yf
 import numpy as np
 import data_fetcher
+import math
+
+def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
+    """
+    Calcola la probabilità statistica (0-100%) che il prezzo rimanga 
+    all'interno del range selezionato per l'orizzonte temporale dato.
+    """
+    if volatilita_giornaliera <= 0 or prezzo_attuale <= 0:
+        return 0.0
+
+    # Volatilità proiettata sull'orizzonte temporale
+    vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
+
+    # Distanza percentuale dei limiti dal prezzo attuale
+    dist_a = (price_a - prezzo_attuale) / prezzo_attuale
+    dist_b = (price_b - prezzo_attuale) / prezzo_attuale
+
+    # Calcolo degli Z-score
+    z_a = dist_a / vol_periodo
+    z_b = dist_b / vol_periodo
+
+    # Calcolo probabilità usando la Funzione di Errore (CDF normale)
+    cdf_a = (1.0 + math.erf(z_a / math.sqrt(2.0))) / 2.0
+    cdf_b = (1.0 + math.erf(z_b / math.sqrt(2.0))) / 2.0
+
+    probabilita = cdf_b - cdf_a
+    return max(0.0, probabilita) * 100
 
 def calcola_volatilita_storica(ticker="ETH-USD", giorni=14):
     """

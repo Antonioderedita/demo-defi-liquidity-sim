@@ -64,13 +64,32 @@ fee_giornaliere, apr_stimato = fee_estimator.stima_rendimenti_cl(
     capitale, live_price, price_a, price_b, vol_24h, tvl
 )
 
+# Calcolo probabilità statistica (orizzonte 7 giorni)
+probabilita_in_range = range_builder.calcola_probabilita_in_range(
+    live_price, price_a, price_b, vol_daily, giorni_target=7
+)
+
+# Calcolo dell'APR pesato per il rischio (Valore Atteso reale)
+apr_risk_adjusted = apr_stimato * (probabilita_in_range / 100)
+
 col_w, col_u, col_f, col_a = st.columns(4)
 col_w.metric("WETH Reali", f"{weth:.4f}")
 col_u.metric("USDC Reali", f"{usdc:.2f} $")
 col_f.metric("Stima $/Giorno", f"{fee_giornaliere:.2f} $")
-col_a.metric("APR Stimato", f"{apr_stimato:.1f} %")
+col_a.metric("APR Grezzo", f"{apr_stimato:.1f} %")
 
-st.caption("⚠️ L'APR visualizzato è una stima indicativa basata sul TVL aggregato della pool. La resa reale può variare in base alla densità dei tick on-chain.")
+st.markdown("---")
+st.subheader("3. Modello di Rischio e Rendimento Atteso")
+
+col_p, col_r = st.columns(2)
+col_p.metric("Probabilità in Range (7 gg)", f"{probabilita_in_range:.1f} %")
+col_r.metric("Risk-Adjusted APR", f"{apr_risk_adjusted:.1f} %")
+
+# Allarme trasparenza per APR speculativi
+if apr_stimato > 150.0:
+    st.warning("⚠️ L'APR Grezzo è superiore al 150%. Questa è un'estrapolazione lineare di un istante di mercato altalenante. Non è un rendimento annuo garantito: il prezzo romperà il range molto prima.")
+
+st.caption("Il Risk-Adjusted APR rappresenta il vero 'Valore Atteso': abbatte i ritorni stratosferici dei range troppo stretti in base all'alta probabilità di uscire dal limite.")
 
 dist_inf = ((live_price - price_a) / price_a) * 100 if price_a > 0 else 0
 dist_sup = ((price_b - live_price) / live_price) * 100 if live_price > 0 else 0
