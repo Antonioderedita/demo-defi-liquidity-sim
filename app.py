@@ -63,11 +63,25 @@ st.subheader("2. Proiezioni in Tempo Reale")
 L = core_math.get_liquidity_for_capital(capitale, live_price, price_a, price_b)
 weth, usdc = core_math.get_amounts_for_liquidity(L, live_price, price_a, price_b)
 
-# Stima volumetrica delle commissioni
-efficienza_cl = 50.0  # Fattore empirico standard per liquidità concentrata
+# Stima volumetrica dinamica delle commissioni
 if tvl > 0:
-    quota_utente = (capitale / tvl) * efficienza_cl
-    fee_giornaliere = (vol_24h * 0.0005) * quota_utente # 0.05% fee tier
+    # 1. Calcolo dell'ampiezza percentuale del range scelto dall'utente
+    spread = (price_b - price_a) / live_price
+    
+    # 2. Moltiplicatore dinamico: inversamente proporzionale all'ampiezza.
+    # Usiamo parametri realistici per competere con altri fornitori di liquidità concentrata.
+    if spread > 0:
+        # Es: Range 20% -> moltiplicatore ~1.6x | Range 5% -> moltiplicatore ~4x
+        moltiplicatore_dinamico = min(10.0, 0.4 / (spread + 0.05))
+    else:
+        moltiplicatore_dinamico = 1.0
+        
+    # 3. Calcolo quota base e commissioni reali della pool
+    quota_base = capitale / tvl
+    fee_totali_pool = vol_24h * 0.0005 # 0.05% fee tier della pool WETH/USDC
+    
+    # 4. Calcolo rendimenti utente
+    fee_giornaliere = fee_totali_pool * quota_base * moltiplicatore_dinamico
     apr_stimato = (fee_giornaliere * 365 / capitale) * 100
 else:
     fee_giornaliere = 0.0
