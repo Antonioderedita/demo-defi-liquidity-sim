@@ -44,18 +44,53 @@ def get_amounts_for_liquidity(L, price, price_a, price_b):
         y = L * (sqrt_p - sqrt_a)
         
     return x, y
+def calculate_impermanent_loss(L, price_0, price_1, price_a, price_b):
+    """
+    Calcola l'Impermanent Loss confrontando il valore della posizione nella pool
+    con il valore che si avrebbe facendo HODL dei token iniziali.
+    Restituisce la percentuale di IL e i due valori in dollari.
+    """
+    # 1. Calcolo dei token iniziali al prezzo price_0
+    weth_0, usdc_0 = get_amounts_for_liquidity(L, price_0, price_a, price_b)
+    
+    # 2. Calcolo dei token finali al nuovo prezzo price_1
+    weth_1, usdc_1 = get_amounts_for_liquidity(L, price_1, price_a, price_b)
+    
+    # 3. Valore HODL (Token iniziali valorizzati al nuovo prezzo)
+    v_hodl = (weth_0 * price_1) + usdc_0
+    
+    # 4. Valore Pool (Token attuali valorizzati al nuovo prezzo)
+    v_pool = (weth_1 * price_1) + usdc_1
+    
+    # 5. Calcolo percentuale dell'Impermanent Loss
+    if v_hodl == 0:
+        il_percent = 0.0
+    else:
+        il_percent = ((v_pool / v_hodl) - 1) * 100
+        
+    return il_percent, v_pool, v_hodl
 
-# Test rapido di validazione dell'algoritmo
+# Test rapido di validazione dell'Impermanent Loss
 if __name__ == "__main__":
-    # Esempio: 1000$ di capitale, ETH a 3400$, range 3000$ - 4000$
+    # Parametri iniziali
     capitale_test = 1000.0
-    prezzo_test = 3400.0
+    prezzo_iniziale = 3400.0
     limite_inf = 3000.0
     limite_sup = 4000.0
     
-    L = get_liquidity_for_capital(capitale_test, prezzo_test, limite_inf, limite_sup)
-    weth, usdc = get_amounts_for_liquidity(L, prezzo_test, limite_inf, limite_sup)
+    # Nuovo scenario di mercato: ETH scende a 2800$ (completamente fuori range)
+    prezzo_futuro = 2800.0
     
-    print(f"Liquidità (L) calcolata: {L}")
-    print(f"Token nel wallet virtuale -> WETH: {weth:.4f}, USDC: {usdc:.2f}")
-    print(f"Valore totale verificato: {(weth * prezzo_test) + usdc:.2f}$")
+    # Calcolo Liquidità Iniziale
+    L = get_liquidity_for_capital(capitale_test, prezzo_iniziale, limite_inf, limite_sup)
+    
+    # Calcolo IL
+    il_perc, valore_pool, valore_hodl = calculate_impermanent_loss(
+        L, prezzo_iniziale, prezzo_futuro, limite_inf, limite_sup
+    )
+    
+    print("--- TEST IMPERMANENT LOSS ---")
+    print(f"Prezzo scende da {prezzo_iniziale}$ a {prezzo_futuro}$")
+    print(f"Valore se avessi fatto HODL: {valore_hodl:.2f}$")
+    print(f"Valore reale nella Pool: {valore_pool:.2f}$")
+    print(f"Impermanent Loss Netta: {il_perc:.2f}%")
