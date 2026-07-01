@@ -63,25 +63,27 @@ st.subheader("2. Proiezioni in Tempo Reale")
 L = core_math.get_liquidity_for_capital(capitale, live_price, price_a, price_b)
 weth, usdc = core_math.get_amounts_for_liquidity(L, live_price, price_a, price_b)
 
-# Stima volumetrica dinamica delle commissioni
+# Stima volumetrica dinamica e smorzata
 if tvl > 0:
-    # 1. Calcolo dell'ampiezza percentuale del range scelto dall'utente
+    # 1. Calcolo dell'ampiezza percentuale del range (spread)
     spread = (price_b - price_a) / live_price
     
-    # 2. Moltiplicatore dinamico: inversamente proporzionale all'ampiezza.
-    # Usiamo parametri realistici per competere con altri fornitori di liquidità concentrata.
+    # 2. Modello logico di smorzamento
+    # Evita asintoti verticali e modella in modo più fluido la concentrazione
     if spread > 0:
-        # Es: Range 20% -> moltiplicatore ~1.6x | Range 5% -> moltiplicatore ~4x
-        moltiplicatore_dinamico = min(10.0, 0.4 / (spread + 0.05))
+        moltiplicatore_dinamico = 1.0 + (0.2 / (spread + 0.02))
     else:
         moltiplicatore_dinamico = 1.0
         
-    # 3. Calcolo quota base e commissioni reali della pool
-    quota_base = capitale / tvl
-    fee_totali_pool = vol_24h * 0.0005 # 0.05% fee tier della pool WETH/USDC
+    # 3. Fattore di competizione
+    # Compensa il fatto che il TVL visibile è già parzialmente concentrato dagli altri utenti
+    fattore_competizione = 0.3
     
-    # 4. Calcolo rendimenti utente
-    fee_giornaliere = fee_totali_pool * quota_base * moltiplicatore_dinamico
+    # 4. Calcolo quota e profitti netti
+    quota_base = capitale / tvl
+    fee_totali_pool = vol_24h * 0.0005 # 0.05% fee tier della pool
+    
+    fee_giornaliere = fee_totali_pool * quota_base * moltiplicatore_dinamico * fattore_competizione
     apr_stimato = (fee_giornaliere * 365 / capitale) * 100
 else:
     fee_giornaliere = 0.0
