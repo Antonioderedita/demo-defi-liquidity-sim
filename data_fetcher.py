@@ -1,11 +1,11 @@
 import requests
 
-def get_aerodrome_pool_data():
+pair_address = "0xcdac0d6c6c59727a65f871236188350531885c43"  # Sostituisci con l'indirizzo corretto della pool
+
+def get_pool_data_by_address(pair_address):
     """
-    Recupera i dati esclusivamente dalla pool WETH/USDC (0.05% fee tier) su Base.
-    Indirizzo univoco: 0xcdac0d6c6c59727a65f871236188350531885c43
+    Recupera i dati da qualsiasi pool su Base passando l'indirizzo esatto.
     """
-    pair_address = "0xcdac0d6c6c59727a65f871236188350531885c43"
     url = f"https://api.dexscreener.com/latest/dex/pairs/base/{pair_address}"
     
     try:
@@ -15,18 +15,19 @@ def get_aerodrome_pool_data():
         
         pair = data.get('pair')
         if not pair:
-            print("Pool non trovata all'indirizzo specificato.")
             return None
+            
+        quote_sym = pair.get('quoteToken', {}).get('symbol', '')
+        base_sym = pair.get('baseToken', {}).get('symbol', '')
             
         return {
             "prezzo_usd": float(pair.get('priceUsd', 0)),
             "volume_24h_usd": float(pair.get('volume', {}).get('h24', 0)),
             "liquidita_totale_usd": float(pair.get('liquidity', {}).get('usd', 0)),
             "pair_address": pair_address,
-            "dex_rilevato": pair.get('dexId', 'aerodrome'),
-            "coppia_reale": "WETH/USDC"
+            "dex_rilevato": pair.get('dexId', 'sconosciuto'),
+            "coppia_reale": f"{base_sym}/{quote_sym}"
         }
                     
-    except requests.exceptions.RequestException as e:
-        print(f"Errore di connessione API: {e}")
+    except requests.exceptions.RequestException:
         return None

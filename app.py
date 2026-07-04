@@ -8,32 +8,37 @@ st.set_page_config(page_title="DeFi Optimizer", page_icon="⚡", layout="centere
 st.title("Ottimizzatore Liquidità Concentrata")
 st.markdown("---")
 
+st.subheader("Configurazione Pool (Base Network)")
+indirizzo_pool = st.text_input("Inserisci Smart Contract Pair (es. 0xcdac...)", value="0xcdac0d6c6c59727a65f871236188350531885c43")
+fee_scelta = st.selectbox("Fee Tier della Pool (%)", options=[0.01, 0.05, 0.3, 1.0], index=2)
+
 @st.cache_data(ttl=60)
-def fetch_live_data():
-    return data_fetcher.get_aerodrome_pool_data()
+def fetch_live_data(address):
+    return data_fetcher.get_pool_data_by_address(address)
 
 @st.cache_data(ttl=3600)
 def fetch_volatility():
     return range_builder.calcola_volatilita_storica("ETH-USD", giorni=14)
 
-pool_data = fetch_live_data()
+pool_data = fetch_live_data(indirizzo_pool)
 vol_daily = fetch_volatility()
 
 if not pool_data or not vol_daily:
-    st.error("Errore di connessione ai dati on-chain. Riprova più tardi.")
+    st.error("Errore: Impossibile recuperare i dati. Verifica l'indirizzo.")
     st.stop()
 
 live_price = pool_data['prezzo_usd']
 tvl = pool_data['liquidita_totale_usd']
 vol_24h = pool_data['volume_24h_usd']
+nome_coppia = pool_data['coppia_reale']
 
-st.subheader("Dati di Mercato (WETH/USDC - Base)")
+st.subheader(f"Dati di Mercato ({nome_coppia} - {pool_data['dex_rilevato'].capitalize()})")
 col1, col2, col3 = st.columns(3)
-col1.metric("Prezzo WETH", f"{live_price:.2f} $")
+col1.metric("Prezzo Token Base", f"{live_price:.2f} $")
 col2.metric("Volumi (24h)", f"{vol_24h/1e6:.2f} M $")
 col3.metric("Volatilità Giornaliera", f"{(vol_daily*100):.2f}%")
 
-st.caption("Nota: La volatilità storica è calcolata utilizzando il feed ETH-USD come proxy matematico.")
+st.caption("Nota: La volatilità storica è calcolata utilizzando un proxy matematico generico.")
 st.markdown("---")
 
 st.subheader("1. Simulazione Dinamica")
@@ -60,8 +65,9 @@ st.subheader("2. Proiezioni e Analisi del Rischio")
 L = core_math.get_liquidity_for_capital(capitale, live_price, price_a, price_b) if price_b > price_a else 0
 weth, usdc = core_math.get_amounts_for_liquidity(L, live_price, price_a, price_b) if L > 0 else (0, 0)
 
+# Chiamata al calcolo delle fee con parametro percentuale dinamico
 fee_giornaliere, apr_stimato = fee_estimator.stima_rendimenti_cl(
-    capitale, live_price, price_a, price_b, vol_24h, tvl
+    capitale, live_price, price_a, price_b, vol_24h, tvl, fee_scelta
 )
 
 # Calcolo probabilità statistica di NON toccare mai le barriere (orizzonte 7 giorni)
@@ -72,13 +78,9 @@ probabilita_in_range = range_builder.calcola_probabilita_no_touch(
 # Calcolo dell'APR pesato per il rischio (Valore Atteso reale)
 apr_risk_adjusted = apr_stimato * (probabilita_in_range / 100)
 
-
-# Calcolo dell'APR pesato per il rischio (Valore Atteso reale)
-apr_risk_adjusted = apr_stimato * (probabilita_in_range / 100)
-
 col_w, col_u, col_f, col_a = st.columns(4)
-col_w.metric("WETH Reali", f"{weth:.4f}")
-col_u.metric("USDC Reali", f"{usdc:.2f} $")
+col_w.metric("Asset 1 Reali", f"{weth:.4f}")
+col_u.metric("Asset 2 Reali", f"{usdc:.2f} $")
 col_f.metric("Stima $/Giorno", f"{fee_giornaliere:.2f} $")
 col_a.metric("APR Grezzo", f"{apr_stimato:.1f} %")
 
