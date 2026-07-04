@@ -1,7 +1,5 @@
 import requests
 
-pair_address = "0xcdac0d6c6c59727a65f871236188350531885c43"  # Sostituisci con l'indirizzo corretto della pool
-
 def get_pool_data_by_address(pair_address):
     """
     Recupera i dati da qualsiasi pool su Base passando l'indirizzo esatto.
