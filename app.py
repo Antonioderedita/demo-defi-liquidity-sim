@@ -23,8 +23,12 @@ def fetch_volatility():
 pool_data = fetch_live_data(indirizzo_pool)
 vol_daily = fetch_volatility()
 
-if not pool_data or not vol_daily:
-    st.error("Errore: Impossibile recuperare i dati. Verifica l'indirizzo.")
+if not pool_data:
+    st.error(f"🔴 ERRORE DEXSCREENER: Nessun dato trovato per l'indirizzo {indirizzo_pool}. Verifica che la rete sia Base.")
+    st.stop()
+
+if not vol_daily:
+    st.error("🔴 ERRORE YAHOO FINANCE: Impossibile scaricare la volatilità di ETH-USD. Il server Streamlit potrebbe essere stato bloccato da Yahoo.")
     st.stop()
 
 live_price = pool_data['prezzo_usd']
