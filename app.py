@@ -11,36 +11,38 @@ st.title("Aerodrome Slipstream: Autopilota")
 st.markdown("---")
 
 st.subheader("Configurazione Pool (Aerodrome - Base)")
-indirizzo_pool = st.text_input("Inserisci Smart Contract Pair", value="0xcdac0d6c6c59727a65f871236188350531885c43")
+indirizzo_pool = st.text_input("Inserisci Smart Contract Pair (Pool)", value="0xcdac0d6c6c59727a65f871236188350531885c43")
+indirizzo_gauge = st.text_input("Inserisci Smart Contract Gauge (Emissioni)", value="0x519BBD1Dd8C6A94C46080E24f316c14Ee758C025")
 
 @st.cache_data(ttl=60)
 def fetch_live_data(address):
     return data_fetcher.get_pool_data_by_address(address)
 
-@st.cache_data(ttl=3600) # Cache di 1 ora per non stressare l'API
+@st.cache_data(ttl=3600)
 def fetch_volatility(simbolo):
     return range_builder.calcola_volatilita_storica(simbolo, giorni=14)
 
-@st.cache_data(ttl=3600) # Cache di 1 ora per l'APR
+@st.cache_data(ttl=3600)
 def fetch_apr_live(address):
     return data_fetcher.get_apr_from_defillama(address)
 
 # --- FASE DI RECUPERO DATI ---
 pool_data = fetch_live_data(indirizzo_pool)
 if not pool_data:
-    st.error(f"🔴 ERRORE: Nessun dato trovato per l'indirizzo {indirizzo_pool}.")
+    st.error(f"🔴 ERRORE: Nessun dato trovato per l'indirizzo Pool {indirizzo_pool}.")
     st.stop()
 
-# Recupero APR automatico
-apr_dinamico = fetch_apr_live(indirizzo_pool)
+# Tentativo di recupero APR dinamico: prima cerca il Gauge, poi la Pool
+apr_dinamico = fetch_apr_live(indirizzo_gauge)
+if apr_dinamico is None:
+    apr_dinamico = fetch_apr_live(indirizzo_pool)
 
 if apr_dinamico is not None:
     st.success(f"✅ APR Emissioni sincronizzato con DeFi Llama: {apr_dinamico:.2f}%")
 else:
-    st.warning("⚠️ DeFi Llama non ha dati per questa pool. Usa l'inserimento manuale.")
-    apr_dinamico = 25.0 # Fallback di sicurezza
+    st.warning("⚠️ DeFi Llama non ha trovato il Gauge. Usa l'inserimento manuale.")
+    apr_dinamico = 25.0 
 
-# Input che usa il valore estratto dinamicamente come default
 apr_emissioni = st.number_input("Emission APR (%) [Aggiornato in automatico]", min_value=0.0, value=float(apr_dinamico), step=1.0)
 
 simbolo_base = pool_data['coppia_reale'].split('/')[0]
