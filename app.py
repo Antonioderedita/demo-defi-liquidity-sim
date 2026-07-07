@@ -101,7 +101,8 @@ with tab_live:
         # --- SEZIONE 1: PERFORMANCE REALE (FINO AD ORA) ---
         st.subheader("⏱️ Maturato in Tempo Reale")
         st.caption(f"Posizione aperta da {giorni_reali_trascorsi:.2f} giorni.")
-        
+        st.info(f"🎯 **Range Attivo:** {p_a:.4f} $ ↔ {p_b:.4f} $")
+
         fee_maturate_reali = fee_day_attuali * giorni_reali_trascorsi
         profitto_netto_reale = fee_maturate_reali - il_usd
         
