@@ -11,9 +11,12 @@ def get_pool_data_by_address(pair_address):
         response.raise_for_status()
         data = response.json()
         
-        pair = data.get('pair')
-        if not pair:
+        # FIX: DexScreener restituisce sempre un array 'pairs', anche per un singolo indirizzo
+        pairs = data.get('pairs')
+        if not pairs or len(pairs) == 0:
             return None
+            
+        pair = pairs[0]
             
         quote_sym = pair.get('quoteToken', {}).get('symbol', '')
         base_sym = pair.get('baseToken', {}).get('symbol', '')
