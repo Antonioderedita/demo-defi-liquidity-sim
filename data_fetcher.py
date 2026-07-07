@@ -32,3 +32,33 @@ def get_pool_data_by_address(pair_address):
                     
     except requests.exceptions.RequestException:
         return None
+    
+def get_apr_from_defillama(pool_address):
+    """
+    Interroga l'API globale di DeFi Llama per trovare l'APR esatto delle emissioni
+    per una specifica pool di Aerodrome.
+    """
+    url = "https://yields.llama.fi/pools"
+    
+    try:
+        # Aumentiamo il timeout perché il file JSON di DeFi Llama è molto grande
+        response = requests.get(url, timeout=20)
+        response.raise_for_status()
+        pools = response.json().get('data', [])
+        
+        # Cerchiamo la nostra pool all'interno del database globale
+        for p in pools:
+            if p.get('project') == 'aerodrome' and p.get('pool', '').lower() == pool_address.lower():
+                # apyReward rappresenta le emissioni pure del token. 
+                # Se non è disponibile, prendiamo l'APY totale.
+                apr_reale = p.get('apyReward')
+                if apr_reale is None:
+                    apr_reale = p.get('apy')
+                    
+                return float(apr_reale) if apr_reale else None
+                
+        return None # Pool non trovata su DeFi Llama
+        
+    except Exception as e:
+        print(f"Errore connessione DeFi Llama: {e}")
+        return None
