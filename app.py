@@ -6,13 +6,16 @@ import core_math
 import fee_estimator
 import portfolio_manager
 
-st.set_page_config(page_title="DeFi Optimizer Pro", page_icon="⚡", layout="centered")
-st.title("Aerodrome Slipstream: Autopilota")
+st.set_page_config(page_title="Slipstream Autopilota", page_icon="⚡", layout="wide")
+st.title("Aerodrome Autopilota")
 st.markdown("---")
 
-st.subheader("Configurazione Pool (Aerodrome - Base)")
-indirizzo_pool = st.text_input("Inserisci Smart Contract Pair (Pool)", value="0xcdac0d6c6c59727a65f871236188350531885c43")
-indirizzo_gauge = st.text_input("Inserisci Smart Contract Gauge (Emissioni)", value="0x519BBD1Dd8C6A94C46080E24f316c14Ee758C025")
+# --- SIDEBAR PER LA CONFIGURAZIONE ---
+# Spostiamo gli input tecnici di lato per lasciare pulita la schermata centrale
+with st.sidebar:
+    st.header("⚙️ Sorgenti Dati")
+    indirizzo_pool = st.text_input("Smart Contract Pool", value="0xcdac0d6c6c59727a65f871236188350531885c43")
+    indirizzo_gauge = st.text_input("Smart Contract Gauge", value="0x519BBD1Dd8C6A94C46080E24f316c14Ee758C025")
 
 @st.cache_data(ttl=60)
 def fetch_live_data(address):
@@ -22,7 +25,7 @@ def fetch_live_data(address):
 def fetch_volatility(simbolo):
     return range_builder.calcola_volatilita_storica(simbolo, giorni=14)
 
-@st.cache_data(ttl=300) # Aggiorna l'APR ogni 5 minuti
+@st.cache_data(ttl=300) 
 def fetch_apr_onchain(gauge_addr, tvl):
     return data_fetcher.get_apr_from_web3(gauge_addr, tvl)
 
@@ -34,92 +37,103 @@ if not pool_data:
 
 live_price = pool_data['prezzo_usd']
 tvl = pool_data['liquidita_totale_usd']
-
-# Tentativo di recupero APR leggendo direttamente la blockchain
-apr_dinamico = fetch_apr_onchain(indirizzo_gauge, tvl)
-
-if apr_dinamico is not None:
-    st.success(f"✅ APR Emissioni estratto On-Chain dalla Blockchain: {apr_dinamico:.2f}%")
-else:
-    st.warning("⚠️ Lettura On-Chain fallita. Usa l'inserimento manuale.")
-    apr_dinamico = 25.0 
-
-apr_emissioni = st.number_input("Emission APR (%) [Sincronizzato col nodo]", min_value=0.0, value=float(apr_dinamico), step=1.0)
-
 simbolo_base = pool_data['coppia_reale'].split('/')[0]
 vol_daily = fetch_volatility(simbolo_base)
-live_price = pool_data['prezzo_usd']
 nome_coppia = pool_data['coppia_reale']
 
-st.caption(f"**Dati Live:** {nome_coppia} | Prezzo: {live_price:.2f} $ | Volatilità: {(vol_daily*100):.2f}%")
+apr_dinamico = fetch_apr_onchain(indirizzo_gauge, tvl)
+if apr_dinamico is None:
+    apr_dinamico = 25.0 
+
+# --- HEADER INFORMAZIONI DI MERCATO ---
+col_m1, col_m2, col_m3 = st.columns(3)
+col_m1.metric("Mercato Live", nome_coppia, f"{live_price:.4f} $")
+col_m2.metric("Volatilità (14d)", f"{(vol_daily*100):.2f}%")
+col_m3.metric("Emission APR On-Chain", f"{apr_dinamico:.2f}%", "Aggiornato" if apr_dinamico else "Manuale")
 st.markdown("---")
 
-# Creazione delle Schede (Tabs)
-tab_setup, tab_monitor = st.tabs(["⚙️ Setup Simulazione", "📊 Monitoraggio & Diagnosi"])
+
+# --- CREAZIONE SCHEDE PRINCIPALI ---
+tab_setup, tab_live = st.tabs(["🎯 Configura Ingresso", "📊 Dashboard Monitoraggio"])
 
 with tab_setup:
-    st.subheader("1. Modella e Salva la Posizione")
-    capitale = st.number_input("Capitale da investire ($)", min_value=10.0, value=1000.0, step=100.0)
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        st.subheader("Parametri di Liquidità")
+        capitale = st.number_input("Capitale da investire ($)", min_value=10.0, value=1000.0, step=100.0)
+        
+        inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=7, z_score=1.5)
+        price_a, price_b = st.slider(
+            "Imposta Range di Prezzo ($)", 
+            min_value=float(live_price*0.7), max_value=float(live_price*1.3), 
+            value=(float(inf_bil), float(sup_bil)), step=5.0
+        )
     
-    inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=7, z_score=1.5)
-    
-    price_a, price_b = st.slider("Seleziona Range di Prezzo:", min_value=float(live_price*0.7), max_value=float(live_price*1.3), value=(float(inf_bil), float(sup_bil)), step=10.0)
-    
-    if st.button("💾 SIMULA E SALVA POSIZIONE"):
-        portfolio_manager.salva_posizione(indirizzo_pool, capitale, price_a, price_b, live_price, apr_emissioni)
-        st.success("Fotografia della posizione salvata con successo! Passa alla scheda Monitoraggio.")
+    with col_s2:
+        st.subheader("Salvataggio Stato")
+        st.info("Salvando la posizione, il sistema fisserà il prezzo attuale e inizierà a contare il tempo reale trascorso per calcolare i guadagni esatti.")
+        if st.button("💾 INIZIA MONITORAGGIO", use_container_width=True):
+            portfolio_manager.salva_posizione(indirizzo_pool, capitale, price_a, price_b, live_price, apr_dinamico)
+            st.success("Posizione fissata! Passa alla Dashboard.")
 
-with tab_monitor:
+
+with tab_live:
     pos = portfolio_manager.get_posizione(indirizzo_pool)
     
     if not pos:
-        st.info("Nessuna posizione salvata per questa pool. Vai nel Setup e salvala.")
+        st.info("Nessuna posizione salvata. Vai in 'Configura Ingresso' per iniziare.")
     else:
-        st.subheader("Diagnostica di Ribilanciamento")
-        
-        # Macchina del tempo per simulare il passaggio dei giorni (solo a scopo di test)
-        giorni_simulati = st.slider("Simula giorni trascorsi dall'ingresso:", min_value=0.0, max_value=30.0, value=5.0, step=0.5)
-        
-        # Recupero dati salvati
+        # Estrazione dati salvati
         cap_in = pos["capitale_iniziale"]
         p_in = pos["prezzo_ingresso"]
         p_a = pos["limite_inf"]
         p_b = pos["limite_sup"]
-        apr_in = pos["apr_ingresso"]
+        timestamp_in = pos.get("timestamp", time.time())
         
-        # Matematica: IL e Fee
+        # Calcolo tempo reale trascorso
+        giorni_reali_trascorsi = max(0.0001, (time.time() - timestamp_in) / 86400.0)
+        
+        # Matematica Core
         L = core_math.get_liquidity_for_capital(cap_in, p_in, p_a, p_b)
         il_perc, il_usd, lp_value = core_math.calculate_impermanent_loss(L, live_price, p_in, p_a, p_b)
+        fee_day_attuali, _ = fee_estimator.stima_rendimenti_cl(cap_in, live_price, p_a, p_b, apr_dinamico)
         
-        fee_day, _ = fee_estimator.stima_rendimenti_cl(cap_in, live_price, p_a, p_b, apr_in)
-        fee_totali = fee_day * giorni_simulati
+        # --- SEZIONE 1: PERFORMANCE REALE (FINO AD ORA) ---
+        st.subheader("⏱️ Maturato in Tempo Reale")
+        st.caption(f"Posizione aperta da {giorni_reali_trascorsi:.2f} giorni.")
         
-        # Costo Gas stimato per il rebalancing (Prelievo + Swap + Deposito)
-        costo_gas = 1.50
-        profitto_netto = fee_totali - il_usd - costo_gas
+        fee_maturate_reali = fee_day_attuali * giorni_reali_trascorsi
+        profitto_netto_reale = fee_maturate_reali - il_usd
         
-        # UI Metriche
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Prezzo Ingresso -> Attuale", f"{p_in:.2f}$ -> {live_price:.2f}$")
-        col2.metric("Emissioni Maturate (Stima)", f"+ {fee_totali:.2f} $", "Guadagno")
-        col3.metric("Impermanent Loss", f"- {il_usd:.2f} $", "- Perdita")
+        cr1, cr2, cr3 = st.columns(3)
+        cr1.metric("Prezzo Attuale (vs Ingresso)", f"{live_price:.2f}$", f"{(live_price - p_in):.2f}$")
+        cr2.metric("Impermanent Loss Reale", f"- {il_usd:.2f} $")
+        cr3.metric("Profitto Netto Attuale", f"{profitto_netto_reale:.2f} $", f"Fee incassate: +{fee_maturate_reali:.2f}$")
         
         st.markdown("---")
         
-        # DIRETTIVA PRO DELL'ANALISTA: Valutazione Azione
-        st.subheader("Consiglio Algoritmico")
+        # --- SEZIONE 2: PROIEZIONI FUTURE ---
+        st.subheader("🔮 Proiezioni (Forecast)")
+        st.caption(f"Basato sull'APR attuale del {apr_dinamico:.2f}% e assumendo che il prezzo resti nel range.")
         
-        fuori_range = (live_price <= p_a) or (live_price >= p_b)
+        cp1, cp2, cp3 = st.columns(3)
+        cp1.metric("Prossime 24 Ore", f"+ {fee_day_attuali:.2f} $")
+        cp2.metric("Prossimi 7 Giorni", f"+ {(fee_day_attuali * 7):.2f} $")
+        cp3.metric("Prossimi 30 Giorni", f"+ {(fee_day_attuali * 30):.2f} $")
         
-        if profitto_netto > 0:
-            st.success(f"🟢 **PROFITTO NETTO: + {profitto_netto:.2f} $** (Incluse {costo_gas}$ di Gas)")
-            if fuori_range:
-                st.markdown("**AZIONE:** 🛠️ **RIBILANCIA ORA**. Sei fuori range, ma le emissioni hanno coperto abbondantemente l'Impermanent Loss. Puoi chiudere e riaprire a un nuovo prezzo generando puro profitto.")
-            else:
-                st.markdown("**AZIONE:** 🧘‍♂️ **HOLD**. Sei nel range e in netto profitto. Lascia correre l'interesse composto.")
-        else:
-            st.error(f"🔴 **PERDITA NETTA: {profitto_netto:.2f} $** (Incluse {costo_gas}$ di Gas)")
-            if fuori_range:
-                st.markdown("**AZIONE:** 🛑 **ATTENDI (NON RIBILANCIARE)**. Sei fuori range, ma le fee non hanno ancora coperto l'IL. Se chiudi ora la posizione, incassi una perdita matematica definitiva. Attendi un ritracciamento del prezzo verso il range originale.")
-            else:
-                st.markdown("**AZIONE:** ⏳ **HOLD E ACCUMULA**. Il prezzo si è mosso, ma sei ancora nel range. Devi tenere la posizione aperta più a lungo per permettere alle emissioni di assorbire l'Impermanent Loss.")
+        st.markdown("---")
+        
+        # --- SEZIONE 3: AREA DI STRESS TEST (Nascosta in un Expander) ---
+        with st.expander("🧪 Area di Stress Test (Simulazione Manuale)"):
+            st.markdown("Forza i parametri per vedere come si comporterebbe il portafoglio in scenari estremi.")
+            
+            c_test1, c_test2 = st.columns(2)
+            giorni_sim = c_test1.slider("Giorni simulati", 1.0, 30.0, 5.0)
+            prezzo_sim = c_test2.number_input("Prezzo simulato ($)", value=float(live_price))
+            
+            # Ricalcolo basato sui dati simulati
+            _, il_usd_sim, _ = core_math.calculate_impermanent_loss(L, prezzo_sim, p_in, p_a, p_b)
+            fee_tot_sim = fee_day_attuali * giorni_sim
+            net_sim = fee_tot_sim - il_usd_sim
+            
+            st.metric("Profitto Netto nello scenario", f"{net_sim:.2f} $")
