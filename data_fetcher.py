@@ -46,7 +46,6 @@ def get_apr_from_web3(gauge_address, tvl_pool_usd):
         w3 = Web3(Web3.HTTPProvider('https://mainnet.base.org'))
         gauge_address = w3.to_checksum_address(gauge_address)
         
-        # ABI minimale per leggere il reward rate
         abi = [{
             "inputs": [],
             "name": "rewardRate",
@@ -57,18 +56,24 @@ def get_apr_from_web3(gauge_address, tvl_pool_usd):
         
         gauge_contract = w3.eth.contract(address=gauge_address, abi=abi)
         
-        # 1. Lettura On-Chain: Quanti AERO al secondo? (in formato Wei a 18 zeri)
+        # 1. Lettura On-Chain
         reward_rate_wei = gauge_contract.functions.rewardRate().call()
         aero_per_sec = reward_rate_wei / (10**18)
         
-        # Se il gauge è spento o in pausa, restituisce zero
         if aero_per_sec == 0:
             return 0.0
             
-        # 2. Otteniamo il prezzo live del token AERO per valorizzare le emissioni
-        aero_pool_address = "0x2073d8035bb2b0f2e85aaf5a8732c6f40d1f71ee" # Pool AERO/USDC
-        resp = requests.get(f"https://api.dexscreener.com/latest/dex/pairs/base/{aero_pool_address}").json()
-        prezzo_aero = float(resp['pairs'][0]['priceUsd'])
+        # 2. Ottenimento prezzo AERO tramite l'indirizzo del Token (più stabile della Pool)
+        aero_token_address = "0x940181a94A35A4569E4529A3CDfB74e38FD98631"
+        resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{aero_token_address}", timeout=10).json()
+        
+        # Controllo di sicurezza strutturale
+        pairs = resp.get('pairs')
+        if not pairs:
+            print("DexScreener non ha restituito dati validi per AERO.")
+            return None
+            
+        prezzo_aero = float(pairs[0]['priceUsd'])
         
         # 3. Calcolo Matematico dell'APR
         emissioni_annue_usd = aero_per_sec * 31536000 * prezzo_aero # (60 * 60 * 24 * 365)
@@ -78,5 +83,4 @@ def get_apr_from_web3(gauge_address, tvl_pool_usd):
         
     except Exception as e:
         print(f"Errore lettura Web3: {e}")
-        # Ritorna None in caso di errore, così l'app non crasha e usa l'input manuale
         return None
