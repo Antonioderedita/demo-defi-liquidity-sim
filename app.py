@@ -7,7 +7,7 @@ import fee_estimator
 import portfolio_manager
 
 st.set_page_config(page_title="Slipstream Autopilota", page_icon="⚡", layout="wide")
-st.title("Aerodrome Autopilota")
+st.title("Aerodrome autopilot")
 st.markdown("---")
 
 # --- SIDEBAR PER LA CONFIGURAZIONE ---
