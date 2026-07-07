@@ -22,9 +22,9 @@ def fetch_live_data(address):
 def fetch_volatility(simbolo):
     return range_builder.calcola_volatilita_storica(simbolo, giorni=14)
 
-@st.cache_data(ttl=3600)
-def fetch_apr_live(address):
-    return data_fetcher.get_apr_from_defillama(address)
+@st.cache_data(ttl=300) # Aggiorna l'APR ogni 5 minuti
+def fetch_apr_onchain(gauge_addr, tvl):
+    return data_fetcher.get_apr_from_web3(gauge_addr, tvl)
 
 # --- FASE DI RECUPERO DATI ---
 pool_data = fetch_live_data(indirizzo_pool)
@@ -32,18 +32,19 @@ if not pool_data:
     st.error(f"🔴 ERRORE: Nessun dato trovato per l'indirizzo Pool {indirizzo_pool}.")
     st.stop()
 
-# Tentativo di recupero APR dinamico: prima cerca il Gauge, poi la Pool
-apr_dinamico = fetch_apr_live(indirizzo_gauge)
-if apr_dinamico is None:
-    apr_dinamico = fetch_apr_live(indirizzo_pool)
+live_price = pool_data['prezzo_usd']
+tvl = pool_data['liquidita_totale_usd']
+
+# Tentativo di recupero APR leggendo direttamente la blockchain
+apr_dinamico = fetch_apr_onchain(indirizzo_gauge, tvl)
 
 if apr_dinamico is not None:
-    st.success(f"✅ APR Emissioni sincronizzato con DeFi Llama: {apr_dinamico:.2f}%")
+    st.success(f"✅ APR Emissioni estratto On-Chain dalla Blockchain: {apr_dinamico:.2f}%")
 else:
-    st.warning("⚠️ DeFi Llama non ha trovato il Gauge. Usa l'inserimento manuale.")
+    st.warning("⚠️ Lettura On-Chain fallita. Usa l'inserimento manuale.")
     apr_dinamico = 25.0 
 
-apr_emissioni = st.number_input("Emission APR (%) [Aggiornato in automatico]", min_value=0.0, value=float(apr_dinamico), step=1.0)
+apr_emissioni = st.number_input("Emission APR (%) [Sincronizzato col nodo]", min_value=0.0, value=float(apr_dinamico), step=1.0)
 
 simbolo_base = pool_data['coppia_reale'].split('/')[0]
 vol_daily = fetch_volatility(simbolo_base)

@@ -1,4 +1,5 @@
 import requests
+from web3 import Web3
 
 def get_pool_data_by_address(pair_address):
     """
@@ -33,32 +34,49 @@ def get_pool_data_by_address(pair_address):
     except requests.exceptions.RequestException:
         return None
     
-def get_apr_from_defillama(pool_address):
+def get_apr_from_web3(gauge_address, tvl_pool_usd):
     """
-    Interroga l'API globale di DeFi Llama per trovare l'APR esatto delle emissioni
-    per una specifica pool di Aerodrome.
+    Legge le emissioni direttamente dallo Smart Contract del Gauge su Base Network.
     """
-    url = "https://yields.llama.fi/pools"
-    
-    try:
-        # Aumentiamo il timeout perché il file JSON di DeFi Llama è molto grande
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-        pools = response.json().get('data', [])
+    if not gauge_address or tvl_pool_usd <= 0:
+        return None
         
-        # Cerchiamo la nostra pool all'interno del database globale
-        for p in pools:
-            if p.get('project') == 'aerodrome' and p.get('pool', '').lower() == pool_address.lower():
-                # apyReward rappresenta le emissioni pure del token. 
-                # Se non è disponibile, prendiamo l'APY totale.
-                apr_reale = p.get('apyReward')
-                if apr_reale is None:
-                    apr_reale = p.get('apy')
-                    
-                return float(apr_reale) if apr_reale else None
-                
-        return None # Pool non trovata su DeFi Llama
+    try:
+        # Connessione al nodo pubblico di Base
+        w3 = Web3(Web3.HTTPProvider('https://mainnet.base.org'))
+        gauge_address = w3.to_checksum_address(gauge_address)
+        
+        # ABI minimale per leggere il reward rate
+        abi = [{
+            "inputs": [],
+            "name": "rewardRate",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "view",
+            "type": "function"
+        }]
+        
+        gauge_contract = w3.eth.contract(address=gauge_address, abi=abi)
+        
+        # 1. Lettura On-Chain: Quanti AERO al secondo? (in formato Wei a 18 zeri)
+        reward_rate_wei = gauge_contract.functions.rewardRate().call()
+        aero_per_sec = reward_rate_wei / (10**18)
+        
+        # Se il gauge è spento o in pausa, restituisce zero
+        if aero_per_sec == 0:
+            return 0.0
+            
+        # 2. Otteniamo il prezzo live del token AERO per valorizzare le emissioni
+        aero_pool_address = "0x2073d8035bb2b0f2e85aaf5a8732c6f40d1f71ee" # Pool AERO/USDC
+        resp = requests.get(f"https://api.dexscreener.com/latest/dex/pairs/base/{aero_pool_address}").json()
+        prezzo_aero = float(resp['pairs'][0]['priceUsd'])
+        
+        # 3. Calcolo Matematico dell'APR
+        emissioni_annue_usd = aero_per_sec * 31536000 * prezzo_aero # (60 * 60 * 24 * 365)
+        apr_reale = (emissioni_annue_usd / tvl_pool_usd) * 100
+        
+        return float(apr_reale)
         
     except Exception as e:
-        print(f"Errore connessione DeFi Llama: {e}")
+        print(f"Errore lettura Web3: {e}")
+        # Ritorna None in caso di errore, così l'app non crasha e usa l'input manuale
         return None
