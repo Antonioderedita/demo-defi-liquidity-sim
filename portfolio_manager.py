@@ -12,7 +12,8 @@ def salva_posizione(indirizzo_pool, capitale_iniziale, limite_inf, limite_sup, p
         "limite_sup": float(limite_sup),
         "prezzo_ingresso": float(prezzo_ingresso),
         "apr_ingresso": float(apr_ingresso),
-        "timestamp": time.time()
+        "timestamp": time.time(),
+        "allarme_inviato": False
     }
     
     # In Firebase, aggiungiamo .json alla fine del path per usare l'API REST
