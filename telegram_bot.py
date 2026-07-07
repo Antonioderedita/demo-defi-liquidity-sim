@@ -62,20 +62,25 @@ def esegui_controllo_posizione():
     if fuori_range:
         if not allarme_gia_inviato:
             
-            # INSERISCI QUI I PARAMETRI CORRETTI PER LE TUE FUNZIONI
-            il_loss = core_math.calculate_impermanent_loss(...) 
+            # 1. Calcolo tempo reale
+            giorni_trascorsi = max(0.0001, (time.time() - timestamp_ingresso) / 86400.0)
             
-            # INSERISCI QUI I PARAMETRI CORRETTI PER LE TUE FUNZIONI
-            aero_earned = fee_estimator.calcola_emissioni(...)  
+            # 2. Calcolo Impermanent Loss
+            L = core_math.get_liquidity_for_capital(capitale_iniziale, prezzo_ingresso, p_a, p_b)
+            il_perc, il_usd, lp_value = core_math.calculate_impermanent_loss(L, live_price, prezzo_ingresso, p_a, p_b)
             
-            net_balance = aero_earned + il_loss
+            # 3. Calcolo Emissioni
+            fee_day_attuali, _ = fee_estimator.stima_rendimenti_cl(capitale_iniziale, live_price, p_a, p_b, apr_ingresso)
+            aero_earned = fee_day_attuali * giorni_trascorsi
+            
+            net_balance = aero_earned - il_usd
             
             testo = (
                 f"🚨 <b>ATTENZIONE: FUORI RANGE</b> 🚨\n\n"
                 f"Prezzo attuale: {live_price:.4f} $\n"
                 f"Range: {p_a:.4f} - {p_b:.4f}\n\n"
                 f"💸 <b>Metriche Posizione:</b>\n"
-                f"Impermanent Loss: {il_loss:.2f} $\n"
+                f"Impermanent Loss: -{il_usd:.2f} $\n"
                 f"AERO Maturati: +{aero_earned:.2f} $\n"
                 f"<b>Bilancio Netto: {net_balance:.2f} $</b>"
             )
