@@ -55,11 +55,5 @@ def esegui_controllo_posizione():
     print("----------------------------------\n")
 
 if __name__ == "__main__":
-    print("🤖 Bot di Monitoraggio Attivato H24.")
-    while True:
-        try:
-            esegui_controllo_posizione()
-        except Exception as e:
-            print(f"Errore durante l'esecuzione: {e}")
-            
-        time.sleep(3600)  # Controlla ogni ora (3600 secondi)
+    print("Avvio controllo schedulato da GitHub Actions...")
+    esegui_controllo_posizione()
