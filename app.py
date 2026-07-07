@@ -101,7 +101,13 @@ with tab_live:
         # --- SEZIONE 1: PERFORMANCE REALE (FINO AD ORA) ---
         st.subheader("⏱️ Maturato in Tempo Reale")
         st.caption(f"Posizione aperta da {giorni_reali_trascorsi:.2f} giorni.")
-        st.info(f"🎯 **Range Attivo:** {p_a:.4f} $ ↔ {p_b:.4f} $")
+        # Griglia ordinata per mostrare capitale e range
+        col_pos1, col_pos2, col_pos3 = st.columns(3)
+        col_pos1.metric("Capitale Investito", f"{cap_in:.2f} $")
+        col_pos2.metric("Limite Inferiore", f"{p_a:.4f} $")
+        col_pos3.metric("Limite Superiore", f"{p_b:.4f} $")
+        
+        st.markdown("<br>", unsafe_allow_html=True) # Spazio per dividere le sezioni
 
         fee_maturate_reali = fee_day_attuali * giorni_reali_trascorsi
         profitto_netto_reale = fee_maturate_reali - il_usd
