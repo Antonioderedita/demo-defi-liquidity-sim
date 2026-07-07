@@ -4,31 +4,35 @@ import range_builder
 import core_math
 import fee_estimator
 
-st.set_page_config(page_title="DeFi Optimizer", page_icon="⚡", layout="centered")
+st.set_page_config(page_title="DeFi Optimizer (Aerodrome)", page_icon="⚡", layout="centered")
 st.title("Ottimizzatore Liquidità Concentrata")
 st.markdown("---")
 
-st.subheader("Configurazione Pool (Base Network)")
+st.subheader("Configurazione Pool (Aerodrome - Base)")
 indirizzo_pool = st.text_input("Inserisci Smart Contract Pair (es. 0xcdac...)", value="0xcdac0d6c6c59727a65f871236188350531885c43")
-fee_scelta = st.selectbox("Fee Tier della Pool (%)", options=[0.01, 0.05, 0.3, 1.0], index=2)
+# Nuovo input per le emissioni al posto della Fee Tier
+apr_emissioni = st.number_input("Emission APR Base della Pool (leggi su Aerodrome %)", min_value=0.0, value=25.0, step=1.0)
 
 @st.cache_data(ttl=60)
 def fetch_live_data(address):
     return data_fetcher.get_pool_data_by_address(address)
 
 @st.cache_data(ttl=3600)
-def fetch_volatility():
-    return range_builder.calcola_volatilita_storica("ETH-USD", giorni=14)
+def fetch_volatility(simbolo):
+    return range_builder.calcola_volatilita_storica(simbolo, giorni=14)
 
 pool_data = fetch_live_data(indirizzo_pool)
-vol_daily = fetch_volatility()
 
 if not pool_data:
-    st.error(f"🔴 ERRORE DEXSCREENER: Nessun dato trovato per l'indirizzo {indirizzo_pool}. Verifica che la rete sia Base.")
+    st.error(f"🔴 ERRORE: Nessun dato trovato per l'indirizzo {indirizzo_pool}. Verifica che la rete sia Base.")
     st.stop()
 
+# Estrazione dinamica del token base (es. WETH)
+simbolo_base = pool_data['coppia_reale'].split('/')[0]
+vol_daily = fetch_volatility(simbolo_base)
+
 if not vol_daily:
-    st.error("🔴 ERRORE YAHOO FINANCE: Impossibile scaricare la volatilità di ETH-USD. Il server Streamlit potrebbe essere stato bloccato da Yahoo.")
+    st.error("🔴 ERRORE YAHOO FINANCE: Impossibile scaricare la volatilità. Riprova più tardi.")
     st.stop()
 
 live_price = pool_data['prezzo_usd']
@@ -36,13 +40,13 @@ tvl = pool_data['liquidita_totale_usd']
 vol_24h = pool_data['volume_24h_usd']
 nome_coppia = pool_data['coppia_reale']
 
-st.subheader(f"Dati di Mercato ({nome_coppia} - {pool_data['dex_rilevato'].capitalize()})")
+st.subheader(f"Dati di Mercato ({nome_coppia})")
 col1, col2, col3 = st.columns(3)
 col1.metric("Prezzo Token Base", f"{live_price:.2f} $")
-col2.metric("Volumi (24h)", f"{vol_24h/1e6:.2f} M $")
+col2.metric("TVL Pool", f"{tvl/1e6:.2f} M $")
 col3.metric("Volatilità Giornaliera", f"{(vol_daily*100):.2f}%")
 
-st.caption("Nota: La volatilità storica è calcolata utilizzando un proxy matematico generico.")
+st.caption(f"Nota: La volatilità storica è calcolata sul proxy {simbolo_base}.")
 st.markdown("---")
 
 st.subheader("1. Simulazione Dinamica")
@@ -69,9 +73,9 @@ st.subheader("2. Proiezioni e Analisi del Rischio")
 L = core_math.get_liquidity_for_capital(capitale, live_price, price_a, price_b) if price_b > price_a else 0
 weth, usdc = core_math.get_amounts_for_liquidity(L, live_price, price_a, price_b) if L > 0 else (0, 0)
 
-# Chiamata al calcolo delle fee con parametro percentuale dinamico
+# Chiamata al calcolo delle fee basata sulle emissioni veAERO
 fee_giornaliere, apr_stimato = fee_estimator.stima_rendimenti_cl(
-    capitale, live_price, price_a, price_b, vol_24h, tvl, fee_scelta
+    capitale, live_price, price_a, price_b, apr_emissioni
 )
 
 # Calcolo probabilità statistica di NON toccare mai le barriere (orizzonte 7 giorni)

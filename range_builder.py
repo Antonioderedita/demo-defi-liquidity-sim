@@ -3,18 +3,36 @@ import numpy as np
 import data_fetcher
 import math
 
-def calcola_probabilita_terminale(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
+def calcola_volatilita_storica(simbolo_base, giorni=14):
     """
-    (VECCHIA METRICA) Calcola la probabilità che il prezzo si trovi dentro il range 
-    ESATTAMENTE all'ultimo giorno. Sovrastima la sicurezza reale.
+    Scarica la volatilità dinamicamente mappando il token della pool 
+    al ticker corretto su Yahoo Finance.
     """
-    if volatilita_giornaliera <= 0 or prezzo_attuale <= 0: return 0.0
-    vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
-    z_a = ((price_a - prezzo_attuale) / prezzo_attuale) / vol_periodo
-    z_b = ((price_b - prezzo_attuale) / prezzo_attuale) / vol_periodo
-    cdf_a = (1.0 + math.erf(z_a / math.sqrt(2.0))) / 2.0
-    cdf_b = (1.0 + math.erf(z_b / math.sqrt(2.0))) / 2.0
-    return max(0.0, cdf_b - cdf_a) * 100
+    # Dizionario di conversione token -> ticker Yahoo Finance
+    mappa_ticker = {
+        "WETH": "ETH-USD",
+        "ETH": "ETH-USD",
+        "CBBTC": "BTC-USD",
+        "WBTC": "BTC-USD",
+        "AERO": "AERO-USD",
+        "USDC": "USDC-USD"
+    }
+    
+    # Se il token non è in mappa, prova il formato standard SIMBOLO-USD
+    ticker_yf = mappa_ticker.get(simbolo_base.upper(), f"{simbolo_base.upper()}-USD")
+    
+    try:
+        storico = yf.download(ticker_yf, period=f"{giorni + 5}d", interval="1d", progress=False)
+        if storico.empty:
+            return 0.03 # Fallback 3%
+            
+        prezzi = storico['Close'].dropna()
+        log_ret = np.log(prezzi / prezzi.shift(1)).dropna()
+        volatilita_giornaliera = np.std(log_ret)
+        
+        return float(volatilita_giornaliera)
+    except Exception:
+        return 0.03
 
 def calcola_probabilita_no_touch(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
     """
@@ -72,67 +90,38 @@ def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_gi
     probabilita = cdf_b - cdf_a
     return max(0.0, probabilita) * 100
 
-def calcola_volatilita_storica(ticker="ETH-USD", giorni=14):
-    """
-    Scarica lo storico dei prezzi e calcola la deviazione standard (volatilità)
-    dei rendimenti giornalieri.
-    """
-    print(f"Scaricamento dati storici per {ticker} (Ultimi {giorni} giorni)...")
-    dati = yf.download(ticker, period=f"{giorni+5}d", progress=False)
-    
-    if dati.empty:
-        print("Errore nello scaricamento dei dati storici.")
-        return None
-        
-    # Estraiamo i prezzi, li convertiamo in un array NumPy e li appiattiamo in 1D
-    # Questo risolve in modo definitivo l'errore di broadcasting (shape mismatch)
-    prezzi = dati['Close'].to_numpy().flatten()
-    
-    # Calcolo dei rendimenti giornalieri percentuali in puro NumPy 1D
-    rendimenti = np.diff(prezzi) / prezzi[:-1]
-    
-    # La deviazione standard dei rendimenti è la nostra volatilità giornaliera
-    volatilita_giornaliera = np.std(rendimenti)
-    
-    return volatilita_giornaliera
-
 def suggerisci_range_ottimale(prezzo_attuale, volatilita_giornaliera, giorni_target=7, z_score=1.5):
     """
     Calcola i limiti inferiore e superiore basati sulla probabilità statistica.
     z_score = 1.5 copre circa l'86% degli scenari possibili (ottimo compromesso rischio/rendimento per DeFi).
     """
-    # Proiettiamo la volatilità giornaliera sull'orizzonte temporale scelto dall'utente
     volatilita_periodo = volatilita_giornaliera * np.sqrt(giorni_target)
     
     limite_inf = prezzo_attuale * (1 - (z_score * volatilita_periodo))
     limite_sup = prezzo_attuale * (1 + (z_score * volatilita_periodo))
     
-    # Arrotondiamo per comodità visiva e operativa
     return round(limite_inf, 2), round(limite_sup, 2), volatilita_periodo
 
 if __name__ == "__main__":
     print("=== COSTRUTTORE RANGE INIZIALE ===")
     
-    # 1. Recuperiamo il prezzo live esatto da Aerodrome
-    pool_data = data_fetcher.get_aerodrome_pool_data()
+    # FIX: Chiamata aggiornata alla nuova funzione dinamica con l'indirizzo di default
+    pool_data = data_fetcher.get_pool_data_by_address("0xcdac0d6c6c59727a65f871236188350531885c43")
     
     if pool_data:
         prezzo_live = pool_data['prezzo_usd']
-        print(f"\nPrezzo Live WETH (Aerodrome): {prezzo_live:.2f} $")
+        print(f"\nPrezzo Live Token Base: {prezzo_live:.2f} $")
         
-        # 2. Calcoliamo la volatilità
-        vol_daily = calcola_volatilita_storica("ETH-USD", giorni=14)
+        # FIX: Passiamo il simbolo estratto dinamicamente invece dell'hardcoded "ETH-USD"
+        simbolo_base = pool_data['coppia_reale'].split('/')[0]
+        vol_daily = calcola_volatilita_storica(simbolo_base, giorni=14)
         
         if vol_daily:
-            print(f"Volatilità giornaliera rilevata: {(vol_daily * 100):.2f}%")
+            print(f"Volatilità giornaliera rilevata ({simbolo_base}): {(vol_daily * 100):.2f}%")
             
-            # 3. Generiamo i range raccomandati
-            # Profilo Aggressivo: z=1 (Cattura più fee, ma rischio uscita più alto)
-            # Profilo Bilanciato: z=1.5 (Standard DeFi)
             inf_agg, sup_agg, _ = suggerisci_range_ottimale(prezzo_live, vol_daily, giorni_target=7, z_score=1.0)
             inf_bil, sup_bil, _ = suggerisci_range_ottimale(prezzo_live, vol_daily, giorni_target=7, z_score=1.5)
             
             print("\n--- SUGGERIMENTI RANGE (Orizzonte stimato: 7 giorni) ---")
             print(f"🔥 Profilo Aggressivo (Z=1.0): {inf_agg} $ - {sup_agg} $")
             print(f"⚖️ Profilo Bilanciato (Z=1.5): {inf_bil} $ - {sup_bil} $")
-            print("\nNOTA: Il profilo bilanciato copre l'86% dei movimenti storici previsti.")
