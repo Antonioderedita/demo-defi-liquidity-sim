@@ -3,19 +3,20 @@ import data_fetcher
 import fee_estimator
 
 GAS_COST_USD = 1.50   
+APR_EMISSIONI_BASE = 25.0 # Valore di default per le emissioni Aerodrome
 
 def analyze_position(capital, price_a, price_b, entry_price=None):
-    """Esegue l'analisi ibrida della posizione con stime centralizzate."""
+    """Esegue l'analisi ibrida della posizione con stime centralizzate (Modello Aerodrome)."""
     print("Recupero dati live...")
-    pool_data = data_fetcher.get_aerodrome_pool_data()
+    
+    # FIX 1: Usiamo la nuova funzione dinamica puntando alla pool WETH/USDC
+    pool_data = data_fetcher.get_pool_data_by_address("0xcdac0d6c6c59727a65f871236188350531885c43")
     
     if not pool_data:
         print("Impossibile recuperare i dati. Analisi interrotta.")
         return
         
     live_price = pool_data['prezzo_usd']
-    volume_24h = pool_data['volume_24h_usd']
-    tvl = pool_data['liquidita_totale_usd']
     
     print(f"\n=== ANALISI IBRIDA POSIZIONE ===")
     print(f"Prezzo: {live_price:.2f} $ | Range: {price_a}$ - {price_b}$")
@@ -33,16 +34,16 @@ def analyze_position(capital, price_a, price_b, entry_price=None):
     elif min_dist <= 5.0:
         print(f"\nSTATO: 🟡 ALLARME ATTIVATO (Distanza: {min_dist:.2f}%).")
         
-        # Uso della logica centralizzata da fee_estimator
+        # FIX 2: Uso della nuova logica Aerodrome passando APR_EMISSIONI_BASE
         fee_giornaliere, apr = fee_estimator.stima_rendimenti_cl(
-            capital, live_price, price_a, price_b, volume_24h, tvl
+            capital, live_price, price_a, price_b, APR_EMISSIONI_BASE
         )
         print(f"-> Commissioni stimate prodotte: {fee_giornaliere:.2f} $/giorno (APR: {apr:.1f}%)")
         
         if fee_giornaliere > (GAS_COST_USD * 1.5):
-            print("AZIONE OGGETTIVA: MANTENERE. I volumi giustificano il rischio.")
+            print("AZIONE OGGETTIVA: MANTENERE. L'APR delle emissioni giustifica il rischio.")
         else:
-            print("AZIONE OGGETTIVA: REBALANCING PREVENTIVO. Volumi troppo bassi.")
+            print("AZIONE OGGETTIVA: REBALANCING PREVENTIVO. Resa troppo bassa rispetto al gas.")
             
     # CONDIZIONE 3: Zona Sicura
     else:
