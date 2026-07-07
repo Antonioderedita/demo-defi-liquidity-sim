@@ -24,40 +24,6 @@ class TestCoreMath:
         assert weth > 0
         assert usdc == 0.0
 
-class TestFeeEstimator:
-    def test_stima_rendimenti_zero_tvl(self):
-        """Se la pool è vuota, l'algoritmo non deve calcolare divisioni per zero."""
-        fee, apr = fee_estimator.stima_rendimenti_cl(
-            capitale=1000.0, live_price=1600.0, price_a=1500.0, price_b=1700.0, 
-            vol_24h=50000.0, tvl_pool=0.0
-        )
-        assert fee == 0.0
-        assert apr == 0.0
-
-    def test_stima_rendimenti_range_invalido(self):
-        """Se i limiti coincidono (spread = 0) o sono invertiti, restituisce zero."""
-        fee, apr = fee_estimator.stima_rendimenti_cl(
-            capitale=1000.0, live_price=1600.0, price_a=1600.0, price_b=1600.0, 
-            vol_24h=50000.0, tvl_pool=1000000.0
-        )
-        assert fee == 0.0
-        assert apr == 0.0
-
-    def test_clipping_quota_utente(self):
-        """
-        Se un utente inserisce un capitale maggiore del TVL dell'intera pool,
-        la quota deve essere cappata a 1.0 (100%) per impedire APR esplosivi e infiniti.
-        """
-        # TVL = 1 Milione, Capitale Utente = 2 Milioni
-        fee, apr = fee_estimator.stima_rendimenti_cl(
-            capitale=2000000.0, live_price=1600.0, price_a=1500.0, price_b=1700.0, 
-            vol_24h=50000.0, tvl_pool=1000000.0
-        )
-        # La fee giornaliera calcolata non deve superare il totale logico ammissibile
-        assert fee > 0
-        # Fee totali della pool = 50k * 0.0005 = 25$. L'utente non può guadagnare più del limite strutturale.
-        assert fee < 100.0
-
     def test_range_invertito(self):
         L = core_math.get_liquidity_for_capital(1000.0, 1600.0, 1700.0, 1500.0)
         assert L == 0.0
@@ -75,15 +41,48 @@ class TestFeeEstimator:
         il_perc, _, _ = core_math.calculate_impermanent_loss(L, 1600.0, 1600.0, 1500.0, 1700.0)
         assert il_perc == 0.0
 
-    # DA AGGIUNGERE DENTRO TestFeeEstimator:
+
+class TestFeeEstimator:
+    def test_stima_rendimenti_zero_emissioni(self):
+        """Se le emissioni sono a zero, l'algoritmo non deve calcolare ritorni."""
+        fee, apr = fee_estimator.stima_rendimenti_cl(
+            capitale=1000.0, live_price=1600.0, price_a=1500.0, price_b=1700.0, 
+            apr_emissioni_base=0.0
+        )
+        assert fee == 0.0
+        assert apr == 0.0
+
+    def test_stima_rendimenti_range_invalido(self):
+        """Se i limiti coincidono (spread = 0) o sono invertiti, restituisce zero."""
+        fee, apr = fee_estimator.stima_rendimenti_cl(
+            capitale=1000.0, live_price=1600.0, price_a=1600.0, price_b=1600.0, 
+            apr_emissioni_base=25.0
+        )
+        assert fee == 0.0
+        assert apr == 0.0
+
+    def test_moltiplicatore_concentrazione(self):
+        """
+        Sostituisce il vecchio test sul TVL. Verifica che a parità di capitale ed emissioni base,
+        un range più stretto generi un APR stimato maggiore (effetto concentrazione).
+        """
+        _, apr_largo = fee_estimator.stima_rendimenti_cl(
+            capitale=1000.0, live_price=1600.0, price_a=1000.0, price_b=2200.0, apr_emissioni_base=25.0
+        )
+        _, apr_stretto = fee_estimator.stima_rendimenti_cl(
+            capitale=1000.0, live_price=1600.0, price_a=1500.0, price_b=1700.0, apr_emissioni_base=25.0
+        )
+        assert apr_stretto > apr_largo
+
     def test_fee_zero_se_fuori_range(self):
         """Se il prezzo attuale è fuori dal range, le fee devono essere zero assoluto."""
         fee, apr = fee_estimator.stima_rendimenti_cl(
             capitale=1000.0, live_price=2000.0, price_a=1500.0, price_b=1700.0,
-            vol_24h=50000.0, tvl_pool=1000000.0
+            apr_emissioni_base=25.0
         )
         assert fee == 0.0
         assert apr == 0.0
+
 
 class TestRangeBuilder:
     def test_monotonicita_probabilita(self):
