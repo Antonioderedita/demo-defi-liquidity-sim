@@ -25,7 +25,7 @@ multitasking==0.0.13
 narwhals==2.23.0
 numpy==2.0.1
 packaging==26.2
-pandas==3.0.3
+pandas
 peewee==4.1.1
 pillow==12.3.0
 platformdirs==4.10.0
