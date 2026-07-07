@@ -1,10 +1,10 @@
 {
     "0xcdac0d6c6c59727a65f871236188350531885c43": {
         "capitale_iniziale": 1000.0,
-        "limite_inf": 1625.43,
-        "limite_sup": 1965.23,
-        "prezzo_ingresso": 1795.33,
-        "apr_ingresso": 15.438174996749812,
-        "timestamp": 1783439301.883483
+        "limite_inf": 1867.0,
+        "limite_sup": 1966.22,
+        "prezzo_ingresso": 1796.35,
+        "apr_ingresso": 15.283323718995648,
+        "timestamp": 1783440393.5603468
     }
 }

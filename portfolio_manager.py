@@ -1,37 +1,42 @@
-import json
-import os
 import time
+import requests
 
-FILE_PATH = "posizioni_attive.json"
+# L'endpoint centrale del tuo database Cloud
+FIREBASE_URL = "https://aerodrome-slipstream-default-rtdb.europe-west1.firebasedatabase.app"
 
-def salva_posizione(indirizzo_pool, capitale, price_a, price_b, entry_price, apr_emissioni):
-    """Salva i parametri di ingresso della posizione in un database JSON."""
-    dati = carica_tutte_posizioni()
-    
-    dati[indirizzo_pool] = {
-        "capitale_iniziale": capitale,
-        "limite_inf": price_a,
-        "limite_sup": price_b,
-        "prezzo_ingresso": entry_price,
-        "apr_ingresso": apr_emissioni,
+def salva_posizione(indirizzo_pool, capitale_iniziale, limite_inf, limite_sup, prezzo_ingresso, apr_ingresso):
+    """Salva i dati della posizione direttamente sul database Cloud Firebase."""
+    posizione = {
+        "capitale_iniziale": float(capitale_iniziale),
+        "limite_inf": float(limite_inf),
+        "limite_sup": float(limite_sup),
+        "prezzo_ingresso": float(prezzo_ingresso),
+        "apr_ingresso": float(apr_ingresso),
         "timestamp": time.time()
     }
     
-    with open(FILE_PATH, "w") as f:
-        json.dump(dati, f, indent=4)
-    return True
-
-def carica_tutte_posizioni():
-    """Legge il database JSON."""
-    if not os.path.exists(FILE_PATH):
-        return {}
-    with open(FILE_PATH, "r") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return {}
+    # In Firebase, aggiungiamo .json alla fine del path per usare l'API REST
+    url = f"{FIREBASE_URL}/posizioni/{indirizzo_pool}.json"
+    
+    try:
+        # Usiamo PUT per creare o sovrascrivere la singola posizione
+        risposta = requests.put(url, json=posizione, timeout=10)
+        risposta.raise_for_status()
+        print(f"Posizione salvata su Cloud per {indirizzo_pool}")
+        return True
+    except Exception as e:
+        print(f"Errore scrittura Firebase: {e}")
+        return False
 
 def get_posizione(indirizzo_pool):
-    """Recupera la singola posizione salvata per una pool specifica."""
-    dati = carica_tutte_posizioni()
-    return dati.get(indirizzo_pool)
+    """Recupera i dati della posizione dal database Cloud Firebase."""
+    url = f"{FIREBASE_URL}/posizioni/{indirizzo_pool}.json"
+    
+    try:
+        risposta = requests.get(url, timeout=10)
+        risposta.raise_for_status()
+        dati = risposta.json()
+        return dati # Restituisce il dizionario, o None se la pool non è salvata
+    except Exception as e:
+        print(f"Errore lettura Firebase: {e}")
+        return None
