@@ -60,7 +60,7 @@ with tab_setup:
     col_s1, col_s2 = st.columns(2)
     with col_s1:
         st.subheader("Parametri di Liquidità")
-        capitale = st.number_input("Capitale da investire ($)", min_value=10.0, value=1000.0, step=100.0)
+        capitale = st.number_input("Capitale da investire ($)", min_value=0.01, value=100.0, step=10.0)
         
         inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=7, z_score=1.5)
         price_a, price_b = st.slider(

@@ -1,7 +1,8 @@
 import requests
+import os
 
-TELEGRAM_BOT_TOKEN = "8779936791:AAEWTCCxDOyVqK05eXGc07_yMdz0QJfGvfY"
-TELEGRAM_CHAT_ID = "5955452088"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 print("Invio ping a Telegram...")
 url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"

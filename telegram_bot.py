@@ -4,10 +4,12 @@ import portfolio_manager
 import data_fetcher
 import core_math
 import fee_estimator
+import os
 
 # --- CONFIGURAZIONE TELEGRAM ---
-TELEGRAM_BOT_TOKEN = "8779936791:AAEWTCCxDOyVqK05eXGc07_yMdz0QJfGvfY"
-TELEGRAM_CHAT_ID = "5955452088"
+# --- CONFIGURAZIONE TELEGRAM ---
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 def invia_messaggio_telegram(testo):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
