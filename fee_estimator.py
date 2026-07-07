@@ -21,3 +21,6 @@ def stima_rendimenti_cl(capitale, live_price, price_a, price_b, apr_emissioni_ba
     fee_giornaliere = (capitale * (apr_stimato / 100)) / 365
     
     return fee_giornaliere, apr_stimato
+
+
+# Force cache invalidation
