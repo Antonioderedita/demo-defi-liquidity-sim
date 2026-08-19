@@ -68,6 +68,12 @@ with tab_setup:
             min_value=float(live_price*0.7), max_value=float(live_price*1.3), 
             value=(float(inf_bil), float(sup_bil)), step=5.0
         )
+        # --- NUOVO BLOCCO: CALCOLO E VISUALIZZAZIONE APR CONCENTRATO ---
+        fee_day_stimate, _ = fee_estimator.stima_rendimenti_cl(capitale, live_price, price_a, price_b, apr_dinamico)
+        apr_concentrato_stimato = (fee_day_stimate * 365 / capitale) * 100
+        
+        st.info(f"📊 **APR Stimato per questo Range:** {apr_concentrato_stimato:.2f}%")
+        # ---------------------------------------------------------------
     
     with col_s2:
         st.subheader("Salvataggio Stato")
