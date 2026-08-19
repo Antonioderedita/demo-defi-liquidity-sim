@@ -106,7 +106,7 @@ if __name__ == "__main__":
     print("=== COSTRUTTORE RANGE INIZIALE ===")
     
     # FIX: Chiamata aggiornata alla nuova funzione dinamica con l'indirizzo di default
-    pool_data = data_fetcher.get_pool_data_by_address("0xcdac0d6c6c59727a65f871236188350531885c43")
+    pool_data = data_fetcher.get_pool_data_by_address("0x3fe04a59ebd38cf06080a6f60a98d124eb59392a")
     
     if pool_data:
         prezzo_live = pool_data['prezzo_usd']

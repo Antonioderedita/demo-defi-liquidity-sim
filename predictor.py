@@ -10,7 +10,7 @@ def analyze_position(capital, price_a, price_b, entry_price=None):
     print("Recupero dati live...")
     
     # FIX 1: Usiamo la nuova funzione dinamica puntando alla pool WETH/USDC
-    pool_data = data_fetcher.get_pool_data_by_address("0xcdac0d6c6c59727a65f871236188350531885c43")
+    pool_data = data_fetcher.get_pool_data_by_address("0x3fe04a59ebd38cf06080a6f60a98d124eb59392a")
     
     if not pool_data:
         print("Impossibile recuperare i dati. Analisi interrotta.")

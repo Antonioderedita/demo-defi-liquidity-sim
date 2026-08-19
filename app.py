@@ -14,8 +14,8 @@ st.markdown("---")
 # Spostiamo gli input tecnici di lato per lasciare pulita la schermata centrale
 with st.sidebar:
     st.header("⚙️ Sorgenti Dati")
-    indirizzo_pool = st.text_input("Smart Contract Pool", value="0xcdac0d6c6c59727a65f871236188350531885c43")
-    indirizzo_gauge = st.text_input("Smart Contract Gauge", value="0x519BBD1Dd8C6A94C46080E24f316c14Ee758C025")
+    indirizzo_pool = st.text_input("Smart Contract Pool", value="0x3fe04a59ebd38cf06080a6f60a98d124eb59392a")
+    indirizzo_gauge = st.text_input("Smart Contract Gauge", value="0xA0B61fdB9f1FB9b917Fe38b49427Fd4D87472D28")
 
 @st.cache_data(ttl=60)
 def fetch_live_data(address):
