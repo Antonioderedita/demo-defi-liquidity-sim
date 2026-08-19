@@ -27,7 +27,7 @@ def aggiorna_status_allarme(indirizzo_pool, stato_allarme):
 
 def esegui_controllo_posizione():
     print("\n--- AVVIO CONTROLLO POSIZIONE ---")
-    indirizzo_pool = "0xcdac0d6c6c59727a65f871236188350531885c43"
+    indirizzo_pool = "0x3fe04a59ebd38cf06080a6f60a98d124eb59392a"
     
     pos = portfolio_manager.get_posizione(indirizzo_pool)
     if not pos:
