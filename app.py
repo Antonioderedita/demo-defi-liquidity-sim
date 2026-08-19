@@ -62,10 +62,10 @@ with tab_setup:
         st.subheader("Parametri di Liquidità")
         capitale = st.number_input("Capitale da investire ($)", min_value=0.01, value=100.0, step=10.0)
         
-        inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=7, z_score=1.5)
+        inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=14, z_score=2.5)
         price_a, price_b = st.slider(
             "Imposta Range di Prezzo ($)", 
-            min_value=float(live_price*0.7), max_value=float(live_price*1.3), 
+            min_value=float(live_price*0.5), max_value=float(live_price*1.5), 
             value=(float(inf_bil), float(sup_bil)), step=5.0
         )
         # --- NUOVO BLOCCO: CALCOLO E VISUALIZZAZIONE APR CONCENTRATO ---
