@@ -92,7 +92,7 @@ with tab_setup:
         # NUOVO CONTROLLO Z-SCORE
         z_score_scelto = st.slider(
             "Ampiezza del range (1.0 = Aggressivo, 1.5 = Bilanciato, 2.0 = Conservativo)", 
-            min_value=1.0, max_value=3.0, value=1.5, step=0.1
+            min_value=0.0, max_value=4.0, value=1.5, step=0.1
         )
         
         # Calcolo dinamico basato sulla scelta dello slider
