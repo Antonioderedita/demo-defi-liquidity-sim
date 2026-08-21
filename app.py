@@ -16,8 +16,8 @@ POOLS = {
         "gauge": "0xA0B61fdB9f1FB9b917Fe38b49427Fd4D87472D28"
     },
     "WETH / cbBTC (Cross-Crypto)": {
-        "pool": "0x2BDBa62624D620CA91D7A73F7A6b3D5d568c07e9", # Sostituisci con l'indirizzo corretto della pool cbBTC
-        "gauge": "0x0000000000000000000000000000000000000000" # Inserisci il gauge address se vuoi i dati on-chain base
+        "pool": "0x42d4a22cad0f5a49681a5715ce994af73a43b76b", # Sostituisci con l'indirizzo corretto della pool cbBTC
+        "gauge": "0x61E0B10423a0009C3f83ab4313813d29437d0817" # Inserisci il gauge address se vuoi i dati on-chain base
     }
 }
 
