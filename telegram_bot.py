@@ -5,7 +5,6 @@ import data_fetcher
 import core_math
 import os
 
-# --- CONFIGURAZIONE TELEGRAM E DATABASE ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 FIREBASE_URL = "https://aerodrome-slipstream-default-rtdb.europe-west1.firebasedatabase.app"
@@ -20,21 +19,18 @@ def invia_messaggio_telegram(testo):
     requests.post(url, json=payload, timeout=10)
 
 def aggiorna_flag_firebase(indirizzo_pool, payload):
-    """Aggiorna i flag su Firebase per evitare lo spam di messaggi."""
     url = f"{FIREBASE_URL}/posizioni/{indirizzo_pool}.json"
     requests.patch(url, json=payload, timeout=10)
 
 def esegui_controllo_posizioni():
     print("\n--- AVVIO CONTROLLO POSIZIONI ---")
     
-    # 1. Recupera TUTTE le posizioni dal database
     posizioni = portfolio_manager.get_tutte_posizioni()
     
     if not posizioni:
         print("❌ Nessuna posizione trovata nel JSON/Database.")
         return
 
-    # 2. Cicla su ogni pool salvata
     for indirizzo_pool, pos in posizioni.items():
         nome_coppia = pos.get("nome_coppia", "Sconosciuta")
         print(f"\n🔎 Analizzo pool: {nome_coppia} ({indirizzo_pool})")
@@ -44,13 +40,18 @@ def esegui_controllo_posizioni():
             print("❌ Impossibile leggere dati da internet per questa pool.")
             continue
             
-        # Impostiamo l'unità di misura per il testo (es. $ o BTC)
         simboli = nome_coppia.split('/')
         simbolo_quote = simboli[1] if len(simboli) > 1 else "USDC"
         valuta_ui = "$" if simbolo_quote.upper() in ["USDC", "USD"] else simbolo_quote.upper()
         
-        # --- Estrazione Dati ---
-        live_price = pool_data['prezzo_nativo'] # FIX: Usa il prezzo nativo!
+        # --- Estrazione Dati e Fix Inversione ---
+        live_price = pool_data['prezzo_nativo']
+        coppia_dexscreener = pool_data['coppia_reale']
+        
+        # Se l'utente ha salvato "WETH/cbBTC" ma DexScreener restituisce "cbBTC/WETH", capovolge il prezzo
+        if nome_coppia != coppia_dexscreener and live_price > 0:
+            live_price = 1 / live_price
+            
         p_a = pos["limite_inf"]
         p_b = pos["limite_sup"]
         
@@ -78,12 +79,10 @@ def esegui_controllo_posizioni():
 
         if fuori_range:
             if not allarme_gia_inviato:
-                # Calcoli metriche con matematica lineare corretta
                 giorni_trascorsi = max(0.0001, (time.time() - timestamp_ingresso) / 86400.0)
                 L = core_math.get_liquidity_for_capital(capitale_iniziale, prezzo_ingresso, p_a, p_b)
                 il_perc, il_usd, lp_value = core_math.calculate_impermanent_loss(L, live_price, prezzo_ingresso, p_a, p_b)
                 
-                # Calcolo lineare delle fee basato sull'APR inserito manualmente
                 fee_day_attuali = (capitale_iniziale * (apr_ingresso / 100)) / 365
                 aero_earned = fee_day_attuali * giorni_trascorsi
                 net_balance = aero_earned - il_usd

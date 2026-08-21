@@ -51,16 +51,25 @@ if not pool_data:
     st.error(f"🔴 ERRORE: Nessun dato trovato per l'indirizzo Pool {indirizzo_pool}.")
     st.stop()
 
-# Usiamo il prezzo nativo invece del prezzo in USD
 live_price = pool_data['prezzo_nativo']
 nome_coppia = pool_data['coppia_reale']
 simboli = nome_coppia.split('/')
 simbolo_base = simboli[0]
 simbolo_quote = simboli[1] if len(simboli) > 1 else "USDC"
 
-# Definiamo la valuta di conto per la UI (es. $ o BTC)
-valuta_ui = "$" if simbolo_quote.upper() in ["USDC", "USD"] else simbolo_quote.upper()
+# --- FIX INVERSIONE PREZZO (DeFi Standard) ---
+with st.sidebar:
+    st.markdown("---")
+    st.header("🔧 Opzioni Visualizzazione")
+    # Si auto-attiva se DexScreener ha messo cbBTC come base
+    inverti_prezzo = st.checkbox("🔄 Inverti Prezzo (es. mostra 1 WETH in cbBTC)", value=(simbolo_base.upper()=="CBBTC"))
 
+if inverti_prezzo and live_price > 0:
+    live_price = 1 / live_price
+    nome_coppia = f"{simbolo_quote}/{simbolo_base}"
+    simbolo_base, simbolo_quote = simbolo_quote, simbolo_base
+
+valuta_ui = "$" if simbolo_quote.upper() in ["USDC", "USD"] else simbolo_quote.upper()
 vol_daily = fetch_volatility(simbolo_base, simbolo_quote)
 
 # --- HEADER INFORMAZIONI DI MERCATO ---
@@ -79,11 +88,9 @@ with tab_setup:
         st.subheader("Parametri di Liquidità")
         capitale = st.number_input("Capitale da investire (Controvalore in USD)", min_value=0.01, value=100.0, step=10.0)
         
-        # Generiamo i suggerimenti usando il prezzo nativo
         inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=14, z_score=2.0)
         
-        # Step e format del range adattati se è un cross-pair
-        step_val = 5.0 if valuta_ui == "$" else 0.000001
+        step_val = 5.0 if valuta_ui == "$" else 0.00001
         formato = "%.2f" if valuta_ui == "$" else "%.6f"
         
         price_a, price_b = st.slider(
@@ -92,12 +99,10 @@ with tab_setup:
             value=(float(inf_bil), float(sup_bil)), step=step_val, format=formato
         )
         
-        # INSERIMENTO MANUALE DELL'APR CONCENTRATO
         st.markdown("---")
         st.subheader("Rendimento Atteso")
         apr_manuale = st.number_input("Inserisci l'APR Concentrato Stimato % (letto su Aerodrome)", min_value=0.0, value=25.0, step=1.0)
         
-        # Calcolo giornaliero lineare basato sull'input manuale
         fee_day_stimate = (capitale * (apr_manuale / 100)) / 365
         st.info(f"📊 **Le fee giornaliere previste sono:** ~{fee_day_stimate:.2f} $")
     
@@ -105,10 +110,8 @@ with tab_setup:
         st.subheader("Salvataggio Stato")
         st.info("Salvando la posizione, il bot Telegram inizierà il monitoraggio su questa coppia specifica.")
         if st.button("💾 SALVA E INIZIA MONITORAGGIO", use_container_width=True):
-            # Passiamo anche il nome_coppia al manager
             portfolio_manager.salva_posizione(indirizzo_pool, nome_coppia, capitale, price_a, price_b, live_price, apr_manuale)
             st.success(f"Posizione fissata per {nome_coppia}! Passa alla Dashboard.")
-
 
 with tab_live:
     pos = portfolio_manager.get_posizione(indirizzo_pool)
@@ -116,7 +119,6 @@ with tab_live:
     if not pos:
         st.info("Nessuna posizione salvata per questa pool. Vai in 'Configura Ingresso' per iniziare.")
     else:
-        # Estrazione dati salvati
         cap_in = pos["capitale_iniziale"]
         p_in = pos["prezzo_ingresso"]
         p_a = pos["limite_inf"]
@@ -124,17 +126,13 @@ with tab_live:
         apr_salvato = pos["apr_ingresso"]
         timestamp_in = pos.get("timestamp", time.time())
         
-        # Calcolo tempo reale trascorso
         giorni_reali_trascorsi = max(0.0001, (time.time() - timestamp_in) / 86400.0)
         
-        # Matematica Core Impermanent Loss
         L = core_math.get_liquidity_for_capital(cap_in, p_in, p_a, p_b)
         il_perc, il_usd, lp_value = core_math.calculate_impermanent_loss(L, live_price, p_in, p_a, p_b)
         
-        # Calcolo Rendite basato sull'APR Manuale salvato
         fee_day_attuali = (cap_in * (apr_salvato / 100)) / 365
         
-        # --- SEZIONE 1: PERFORMANCE REALE (FINO AD ORA) ---
         st.subheader(f"⏱️ Posizione Attiva: {nome_coppia}")
         st.caption(f"Aperta da {giorni_reali_trascorsi:.2f} giorni. APR Impostato: {apr_salvato}%")
         
@@ -155,7 +153,6 @@ with tab_live:
         
         st.markdown("---")
         
-        # --- SEZIONE 2: PROIEZIONI FUTURE ---
         st.subheader("🔮 Proiezioni (Forecast)")
         st.caption(f"Assumendo che il prezzo resti nel range e l'APR rimanga al {apr_salvato}%")
         
