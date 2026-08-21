@@ -162,10 +162,24 @@ with tab_live:
         
         st.markdown("---")
         
-        st.subheader("🔮 Proiezioni (Forecast)")
-        st.caption(f"Assumendo che il prezzo resti nel range e l'APR rimanga al {apr_salvato}%")
+        prob_live_in_range = range_builder.calcola_probabilita_in_range(live_price, p_a, p_b, vol_daily, giorni_target=14)
+        prob_live_no_touch = range_builder.calcola_probabilita_no_touch(live_price, p_a, p_b, vol_daily, giorni_target=14)
+
+        col_proj, col_prob = st.columns(2)
         
-        cp1, cp2, cp3 = st.columns(3)
-        cp1.metric("Prossime 24 Ore", f"+ {fee_day_attuali:.2f} $")
-        cp2.metric("Prossimi 7 Giorni", f"+ {(fee_day_attuali * 7):.2f} $")
-        cp3.metric("Prossimi 30 Giorni", f"+ {(fee_day_attuali * 30):.2f} $")
+        with col_proj:
+            st.subheader("🔮 Proiezioni (Forecast)")
+            st.caption(f"Assumendo che il prezzo resti nel range")
+            st.metric("Prossime 24 Ore", f"+ {fee_day_attuali:.2f} $")
+            st.metric("Prossimi 7 Giorni", f"+ {(fee_day_attuali * 7):.2f} $")
+            st.metric("Prossimi 30 Giorni", f"+ {(fee_day_attuali * 30):.2f} $")
+            
+        with col_prob:
+            st.subheader("🎯 Stato di Sicurezza (Prox 14gg)")
+            st.caption("Ricalcolato in base al prezzo live odierno")
+            st.metric("Probabilità di rimanere nel range", f"{prob_live_in_range:.1f}%")
+            st.metric("Probabilità di non toccare i bordi", f"{prob_live_no_touch:.1f}%")
+            if prob_live_in_range < 50:
+                st.warning("La probabilità di uscire dal range è elevata. Tieni d'occhio Telegram.")
+            else:
+                st.success("La posizione è statisticamente solida.")
