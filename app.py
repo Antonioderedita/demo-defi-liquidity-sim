@@ -57,11 +57,10 @@ simboli = nome_coppia.split('/')
 simbolo_base = simboli[0]
 simbolo_quote = simboli[1] if len(simboli) > 1 else "USDC"
 
-# --- FIX INVERSIONE PREZZO (DeFi Standard) ---
+# --- FIX INVERSIONE PREZZO ---
 with st.sidebar:
     st.markdown("---")
     st.header("🔧 Opzioni Visualizzazione")
-    # Si auto-attiva se DexScreener ha messo cbBTC come base
     inverti_prezzo = st.checkbox("🔄 Inverti Prezzo (es. mostra 1 WETH in cbBTC)", value=(simbolo_base.upper()=="CBBTC"))
 
 if inverti_prezzo and live_price > 0:
@@ -88,11 +87,21 @@ with tab_setup:
         st.subheader("Parametri di Liquidità")
         capitale = st.number_input("Capitale da investire (Controvalore in USD)", min_value=0.01, value=100.0, step=10.0)
         
-        inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=14, z_score=2.0)
+        st.markdown("---")
+        st.markdown("**🛡️ Strategia Statistica (Z-Score)**")
+        # NUOVO CONTROLLO Z-SCORE
+        z_score_scelto = st.slider(
+            "Ampiezza del range (1.0 = Aggressivo, 1.5 = Bilanciato, 2.0 = Conservativo)", 
+            min_value=1.0, max_value=3.0, value=1.5, step=0.1
+        )
+        
+        # Calcolo dinamico basato sulla scelta dello slider
+        inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=14, z_score=z_score_scelto)
         
         step_val = 5.0 if valuta_ui == "$" else 0.00001
         formato = "%.2f" if valuta_ui == "$" else "%.6f"
         
+        st.markdown("---")
         price_a, price_b = st.slider(
             f"Imposta Range di Prezzo ({valuta_ui})", 
             min_value=float(live_price*0.5), max_value=float(live_price*1.5), 
