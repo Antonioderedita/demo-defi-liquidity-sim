@@ -4,9 +4,10 @@ import requests
 # L'endpoint centrale del tuo database Cloud
 FIREBASE_URL = "https://aerodrome-slipstream-default-rtdb.europe-west1.firebasedatabase.app"
 
-def salva_posizione(indirizzo_pool, capitale_iniziale, limite_inf, limite_sup, prezzo_ingresso, apr_ingresso):
+def salva_posizione(indirizzo_pool, nome_coppia, capitale_iniziale, limite_inf, limite_sup, prezzo_ingresso, apr_ingresso):
     """Salva i dati della posizione direttamente sul database Cloud Firebase."""
     posizione = {
+        "nome_coppia": nome_coppia,
         "capitale_iniziale": float(capitale_iniziale),
         "limite_inf": float(limite_inf),
         "limite_sup": float(limite_sup),
@@ -41,3 +42,15 @@ def get_posizione(indirizzo_pool):
     except Exception as e:
         print(f"Errore lettura Firebase: {e}")
         return None
+
+def get_tutte_posizioni():
+    """Recupera tutte le pool salvate per permettere al bot Telegram di ciclarle."""
+    url = f"{FIREBASE_URL}/posizioni.json"
+    
+    try:
+        risposta = requests.get(url, timeout=10)
+        risposta.raise_for_status()
+        return risposta.json() or {}
+    except Exception as e:
+        print(f"Errore lettura di tutte le posizioni: {e}")
+        return {}

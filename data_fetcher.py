@@ -12,7 +12,7 @@ def get_pool_data_by_address(pair_address):
         response.raise_for_status()
         data = response.json()
         
-        # FIX: DexScreener restituisce sempre un array 'pairs', anche per un singolo indirizzo
+        # DexScreener restituisce sempre un array 'pairs', anche per un singolo indirizzo
         pairs = data.get('pairs')
         if not pairs or len(pairs) == 0:
             return None
@@ -24,6 +24,8 @@ def get_pool_data_by_address(pair_address):
             
         return {
             "prezzo_usd": float(pair.get('priceUsd', 0)),
+            # FIX: Aggiunto priceNative. Restituisce il valore del token Base espresso in token Quote.
+            "prezzo_nativo": float(pair.get('priceNative', 0)), 
             "volume_24h_usd": float(pair.get('volume', {}).get('h24', 0)),
             "liquidita_totale_usd": float(pair.get('liquidity', {}).get('usd', 0)),
             "pair_address": pair_address,
