@@ -57,11 +57,28 @@ simboli = nome_coppia.split('/')
 simbolo_base = simboli[0]
 simbolo_quote = simboli[1] if len(simboli) > 1 else "USDC"
 
-# --- FIX INVERSIONE PREZZO ---
+# --- FIX INVERSIONE PREZZO & GESTIONE POSIZIONI ATTIVE ---
 with st.sidebar:
     st.markdown("---")
     st.header("🔧 Opzioni Visualizzazione")
     inverti_prezzo = st.checkbox("🔄 Inverti Prezzo (es. mostra 1 WETH in cbBTC)", value=(simbolo_base.upper()=="CBBTC"))
+    
+    # --- NUOVA SEZIONE AGGIUNTA: MONITORAGGI ATTIVI ---
+    st.markdown("---")
+    st.header("📁 Monitoraggi Attivi")
+    posizioni_salvate = portfolio_manager.get_tutte_posizioni()
+    
+    if not posizioni_salvate:
+        st.info("Nessun monitoraggio attivo.")
+    else:
+        for p_id, p_data in posizioni_salvate.items():
+            nome_pool_salvata = p_data.get("nome_coppia", "Pool Sconosciuta")
+            with st.expander(f"🟢 {nome_pool_salvata}"):
+                st.write(f"Range: {p_data.get('limite_inf', 0):.4f} - {p_data.get('limite_sup', 0):.4f}")
+                if st.button("🗑️ Elimina", key=f"del_{p_id}", type="primary", use_container_width=True):
+                    portfolio_manager.elimina_posizione(p_id)
+                    st.rerun()
+    # --- FINE SEZIONE AGGIUNTA ---
 
 if inverti_prezzo and live_price > 0:
     live_price = 1 / live_price
