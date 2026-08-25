@@ -9,11 +9,9 @@ st.set_page_config(page_title="Slipstream Autopilota", page_icon="⚡", layout="
 st.title("Aerodrome Autopilot")
 st.markdown("---")
 
-# --- INIZIALIZZAZIONE VARIABILE DI CONFERMA ELIMINAZIONE ---
 if 'conferma_eliminazione' not in st.session_state:
     st.session_state['conferma_eliminazione'] = None
 
-# Definiamo le pool preconfigurate per evitare di copiare/incollare indirizzi a mano
 POOLS = {
     "WETH / USDC (Pool Dollaro)": {
         "pool": "0x3fe04a59ebd38cf06080a6f60a98d124eb59392a",
@@ -25,7 +23,6 @@ POOLS = {
     }
 }
 
-# --- SIDEBAR PER LA CONFIGURAZIONE ---
 with st.sidebar:
     st.header("⚙️ Selezione Pool")
     scelta_pool = st.selectbox("Seleziona la Pool da gestire:", list(POOLS.keys()))
@@ -46,14 +43,10 @@ def fetch_live_data(address):
     return data_fetcher.get_pool_data_by_address(address)
 
 @st.cache_data(ttl=3600)
-def fetch_volatility(s_base, s_quote):
-    return range_builder.calcola_volatilita_storica(s_base, s_quote, giorni=14)
+def fetch_historical_metrics(s_base, s_quote):
+    # Chiama la nuova funzione unificata in range_builder
+    return range_builder.calcola_metriche_storiche(s_base, s_quote, giorni=14)
 
-@st.cache_data(ttl=3600)
-def fetch_historical_prices(address):
-    return data_fetcher.get_historical_prices(address, days=14)
-
-# --- FASE DI RECUPERO DATI ---
 pool_data = fetch_live_data(indirizzo_pool)
 if not pool_data:
     st.error(f"🔴 ERRORE: Nessun dato trovato per l'indirizzo Pool {indirizzo_pool}.")
@@ -65,7 +58,6 @@ simboli = nome_coppia.split('/')
 simbolo_base = simboli[0]
 simbolo_quote = simboli[1] if len(simboli) > 1 else "USDC"
 
-# --- FIX INVERSIONE PREZZO & GESTIONE POSIZIONI ATTIVE ---
 with st.sidebar:
     st.markdown("---")
     st.header("🔧 Opzioni Visualizzazione")
@@ -82,8 +74,6 @@ with st.sidebar:
             nome_pool_salvata = p_data.get("nome_coppia", "Pool Sconosciuta")
             with st.expander(f"🟢 {nome_pool_salvata}"):
                 st.write(f"Range: {p_data.get('limite_inf', 0):.4f} - {p_data.get('limite_sup', 0):.4f}")
-                
-                # --- BLOCCO CONFERMA ELIMINAZIONE AGGIORNATO ---
                 if st.session_state['conferma_eliminazione'] == p_id:
                     st.warning("Confermi di voler eliminare?")
                     col_y, col_n = st.columns(2)
@@ -98,31 +88,24 @@ with st.sidebar:
                     if st.button("🗑️ Elimina", key=f"del_{p_id}", use_container_width=True):
                         st.session_state['conferma_eliminazione'] = p_id
                         st.rerun()
-                # --- FINE BLOCCO CONFERMA ---
 
-# Estrazione dello storico prezzi PRIMA di invertire la stringa della coppia
-storico_prezzi = fetch_historical_prices(indirizzo_pool)
-
+# INVERSIONE PREZZO (Applicata PRIMA di calcolare il trend storico)
 if inverti_prezzo and live_price > 0:
     live_price = 1 / live_price
     nome_coppia = f"{simbolo_quote}/{simbolo_base}"
     simbolo_base, simbolo_quote = simbolo_quote, simbolo_base
-    # Se il prezzo è invertito, capovolgiamo anche l'array dello storico per il calcolo del trend
-    if storico_prezzi:
-        storico_prezzi = [1/p for p in storico_prezzi if p > 0]
 
 valuta_ui = "$" if simbolo_quote.upper() in ["USDC", "USD"] else simbolo_quote.upper()
-vol_daily = fetch_volatility(simbolo_base, simbolo_quote)
-trend_suggerito = range_builder.calcola_trend_asimmetria(storico_prezzi) if storico_prezzi else 0.0
 
-# --- HEADER INFORMAZIONI DI MERCATO ---
+# Recupero Volatilità e Trend nativamente sincronizzati con l'interfaccia
+vol_daily, trend_suggerito = fetch_historical_metrics(simbolo_base, simbolo_quote)
+
 col_m1, col_m2, col_m3 = st.columns(3)
 col_m1.metric("Mercato Live", nome_coppia, f"{live_price:.6f} {valuta_ui}")
 col_m2.metric("Volatilità (14d)", f"{(vol_daily*100):.2f}%")
 col_m3.metric("Trend Stimato", f"{(trend_suggerito*100):.2f}%")
 st.markdown("---")
 
-# --- CREAZIONE SCHEDE PRINCIPALI ---
 tab_setup, tab_live = st.tabs(["🎯 Configura Ingresso", "📊 Dashboard Monitoraggio"])
 
 with tab_setup:
@@ -133,13 +116,11 @@ with tab_setup:
         
         st.markdown("---")
         st.markdown("**🛡️ Strategia Statistica (Z-Score)**")
-        # CONTROLLO Z-SCORE
         z_score_scelto = st.slider(
             "Ampiezza del range (1.0 = Aggressivo, 1.5 = Bilanciato, 2.0 = Conservativo)", 
             min_value=0.0, max_value=4.0, value=1.5, step=0.1
         )
         
-        # NUOVO CONTROLLO ASIMMETRIA
         st.markdown("**📈 Direzione Trend (Asimmetria)**")
         st.caption(f"Sposta il baricentro del range basandoti sul trend storico.")
         offset_scelto_perc = st.slider(
@@ -148,7 +129,6 @@ with tab_setup:
         )
         offset_scelto = offset_scelto_perc / 100.0
         
-        # Calcolo dinamico basato sulla scelta degli slider
         inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(
             live_price, vol_daily, giorni_target=14, z_score=z_score_scelto, offset_asimmetria=offset_scelto
         )
@@ -180,11 +160,9 @@ with tab_setup:
 with tab_live:
     tutte_le_posizioni = portfolio_manager.get_tutte_posizioni()
     
-    # Filtriamo per raccogliere solo le posizioni della pool attualmente selezionata
     posizioni_correnti = {}
     if tutte_le_posizioni:
         for p_id, p_data in tutte_le_posizioni.items():
-            # Controllo di retrocompatibilità: gestisce vecchi salvataggi (indirizzo pool) e nuovi (ID uuid)
             ind_salvato = p_data.get("indirizzo_pool", p_id if str(p_id).startswith("0x") else "")
             if ind_salvato.lower() == indirizzo_pool.lower():
                 posizioni_correnti[p_id] = p_data
@@ -196,7 +174,6 @@ with tab_live:
         st.markdown("<br>", unsafe_allow_html=True)
         
         for p_id, pos in posizioni_correnti.items():
-            # Titolo scheda differenziato per vecchi e nuovi salvataggi
             titolo = "Principale (Vecchia)" if str(p_id).startswith("0x") else f"ID: {p_id}"
             st.markdown(f"#### 🔹 Monitoraggio {titolo}")
             
@@ -255,5 +232,4 @@ with tab_live:
                 else:
                     st.success("La posizione è statisticamente solida.")
             
-            # Linea di separazione robusta se ci sono più posizioni
             st.markdown("<hr style='border: 2px solid #ccc; border-radius: 5px;' />", unsafe_allow_html=True)
