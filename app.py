@@ -5,6 +5,7 @@ import range_builder
 import core_math
 import portfolio_manager
 import numpy as np
+import pandas as pd
 
 st.set_page_config(page_title="Slipstream Autopilota", page_icon="⚡", layout="wide")
 st.title("Aerodrome Autopilot")
@@ -93,7 +94,7 @@ with st.sidebar:
                         st.session_state['conferma_eliminazione'] = p_id
                         st.rerun()
 
-# INVERSIONE PREZZO 
+# INVERSIONE PREZZO LIVE
 if inverti_prezzo and live_price > 0:
     live_price = 1 / live_price
     nome_coppia = f"{simbolo_quote}/{simbolo_base}"
@@ -122,8 +123,15 @@ with tab_setup:
     
     dati_grafico = fetch_chart_data(simbolo_base, simbolo_quote, periodi_mappa[scelta_label])
     if not dati_grafico.empty:
+        # Applica l'inversione di prezzo se attivata dalla sidebar
         if inverti_prezzo:
             dati_grafico = 1 / dati_grafico
+            
+        # Aggiunta sicura del prezzo LIVE per evitare il bug di conversione temporale di Pandas
+        now = pd.Timestamp.now(tz=dati_grafico.index.tz)
+        nuovo_punto = pd.Series({now: float(live_price)})
+        dati_grafico = pd.concat([dati_grafico, nuovo_punto])
+        
         st.line_chart(dati_grafico, use_container_width=True)
     else:
         st.warning("Dati storici non disponibili per questo orizzonte temporale.")
