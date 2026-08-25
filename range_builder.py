@@ -1,12 +1,11 @@
 import yfinance as yf
 import numpy as np
-import data_fetcher
 import math
 
-def calcola_volatilita_storica(simbolo_base, simbolo_quote="USDC", giorni=14):
+def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
     """
-    Scarica la volatilità dinamicamente. Supporta coppie contro USD e 
-    cross pair crypto-crypto (calcolando la volatilità del loro rapporto).
+    Scarica storico da Yahoo Finance. Calcola volatilità e trend direzionale.
+    Gestisce automaticamente cross-pair e stablecoin.
     """
     mappa_ticker = {
         "WETH": "ETH-USD",
@@ -25,72 +24,54 @@ def calcola_volatilita_storica(simbolo_base, simbolo_quote="USDC", giorni=14):
         is_stablecoin = simbolo_quote.upper() in ["USDC", "USDT", "USD", "DAI", "EURC"]
         
         if is_stablecoin:
-            # Calcolo standard per pool contro dollaro
             storico = yf.download(ticker_base, period=f"{giorni + 5}d", interval="1d", progress=False)
             prezzi = storico['Close'].dropna().squeeze()
         else:
-            # Calcolo per cross pair (es. WETH/cbBTC) -> Rapporto Base/Quote
             storico_base = yf.download(ticker_base, period=f"{giorni + 5}d", interval="1d", progress=False)
             storico_quote = yf.download(ticker_quote, period=f"{giorni + 5}d", interval="1d", progress=False)
             
             if storico_base.empty or storico_quote.empty:
-                return 0.03
+                return 0.03, 0.0
                 
-            prezzi_base = storico_base['Close'].squeeze()
-            prezzi_quote = storico_quote['Close'].squeeze()
-            
-            # Crea la serie storica del rapporto (es. quanti BTC servono per 1 ETH)
-            prezzi = (prezzi_base / prezzi_quote).dropna()
+            prezzi = (storico_base['Close'].squeeze() / storico_quote['Close'].squeeze()).dropna()
 
         if prezzi.empty:
-            return 0.03
+            return 0.03, 0.0
             
+        # 1. Calcolo Volatilità
         log_ret = np.log(prezzi / prezzi.shift(1)).dropna()
-        volatilita_giornaliera = np.std(log_ret)
+        volatilita_giornaliera = float(np.std(log_ret))
         
-        return float(volatilita_giornaliera)
+        # 2. Calcolo Trend (Regressione Lineare sugli ultimi N giorni)
+        y = prezzi.values[-giorni:] 
+        if len(y) < 2:
+            return volatilita_giornaliera, 0.0
+            
+        x = np.arange(len(y))
+        m, q = np.polyfit(x, y, 1)
+        
+        if q == 0:
+            trend_perc = 0.0
+        else:
+            valore_inizio = q
+            valore_fine = (m * (len(y) - 1)) + q
+            trend_perc = (valore_fine - valore_inizio) / valore_inizio
+            
+        trend_limitato = float(np.clip(trend_perc, -0.15, 0.15))
+        
+        return volatilita_giornaliera, trend_limitato
+        
     except Exception as e:
-        print(f"Errore calcolo volatilità: {e}")
-        return 0.03
-
-def calcola_trend_asimmetria(prezzi_storici):
-    """
-    (NUOVA METRICA) Calcola il coefficiente direzionale usando la regressione lineare
-    sui prezzi storici. Restituisce un moltiplicatore di offset (es. 0.02 per +2%).
-    """
-    if not prezzi_storici or len(prezzi_storici) < 2:
-        return 0.0
-        
-    x = np.arange(len(prezzi_storici))
-    y = np.array(prezzi_storici)
-    
-    # Regressione lineare sui prezzi
-    m, q = np.polyfit(x, y, 1)
-    
-    if q == 0:
-        return 0.0
-        
-    # Calcolo della variazione percentuale stimata dalla retta lungo tutto il periodo
-    valore_inizio = q
-    valore_fine = (m * (len(prezzi_storici) - 1)) + q
-    trend_perc = (valore_fine - valore_inizio) / valore_inizio
-    
-    # Limitiamo il suggerimento a un massimo di +/- 15% per evitare sbilanciamenti estremi
-    return float(np.clip(trend_perc, -0.15, 0.15))
+        print(f"Errore calcolo metriche storiche: {e}")
+        return 0.03, 0.0
 
 def calcola_probabilita_no_touch(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
-    """
-    (NUOVA METRICA) Calcola la probabilità che il prezzo NON tocchi MAI i limiti 
-    durante l'intero orizzonte temporale, usando il Principio di Riflessione.
-    """
     if volatilita_giornaliera <= 0 or prezzo_attuale <= 0 or price_a >= price_b:
         return 0.0
-        
     if prezzo_attuale <= price_a or prezzo_attuale >= price_b:
         return 0.0
 
     vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
-    
     dist_inf = (prezzo_attuale - price_a) / prezzo_attuale
     dist_sup = (price_b - prezzo_attuale) / prezzo_attuale
     
@@ -99,21 +80,15 @@ def calcola_probabilita_no_touch(prezzo_attuale, price_a, price_b, volatilita_gi
     
     prob_touch_inf = math.erfc(z_inf / math.sqrt(2.0))
     prob_touch_sup = math.erfc(z_sup / math.sqrt(2.0))
-    
     prob_no_touch = 1.0 - (prob_touch_inf + prob_touch_sup)
     
     return max(0.0, prob_no_touch) * 100.0
 
 def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
-    """
-    Calcola la probabilità statistica (0-100%) che il prezzo rimanga 
-    all'interno del range selezionato per l'orizzonte temporale dato.
-    """
     if volatilita_giornaliera <= 0 or prezzo_attuale <= 0:
         return 0.0
 
     vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
-
     dist_a = (price_a - prezzo_attuale) / prezzo_attuale
     dist_b = (price_b - prezzo_attuale) / prezzo_attuale
 
@@ -127,43 +102,14 @@ def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_gi
     return max(0.0, probabilita) * 100
 
 def suggerisci_range_ottimale(prezzo_attuale, volatilita_giornaliera, giorni_target=7, z_score=1.5, offset_asimmetria=0.0):
-    """
-    Calcola i limiti inferiore e superiore basati sulla probabilità statistica,
-    con la possibilità di applicare uno spostamento asimmetrico basato sul trend.
-    """
     volatilita_periodo = volatilita_giornaliera * np.sqrt(giorni_target)
     
-    # L'offset sposta il baricentro del range
     limite_inf = prezzo_attuale * (1 - (z_score * volatilita_periodo) + offset_asimmetria)
     limite_sup = prezzo_attuale * (1 + (z_score * volatilita_periodo) + offset_asimmetria)
     
-    # FIX: Arrotondamento portato a 6 cifre per gestire i micro-rapporti (es. ETH/BTC = 0.0385)
     return round(limite_inf, 6), round(limite_sup, 6), volatilita_periodo
 
 if __name__ == "__main__":
-    print("=== COSTRUTTORE RANGE INIZIALE ===")
-    
-    pool_data = data_fetcher.get_pool_data_by_address("0x3fe04a59ebd38cf06080a6f60a98d124eb59392a")
-    
-    if pool_data:
-        # Nota: in __main__ usiamo un blocco generico, ma il prezzo deve riflettere il rapporto corretto
-        simboli = pool_data['coppia_reale'].split('/')
-        simbolo_base = simboli[0]
-        simbolo_quote = simboli[1] if len(simboli) > 1 else "USDC"
-        
-        # Testiamo se è la pool WETH/cbBTC (indirizzo placeholder) o simili
-        prezzo_live = pool_data['prezzo_usd'] 
-        
-        print(f"\nCoppia rilevata: {simbolo_base}/{simbolo_quote}")
-        
-        vol_daily = calcola_volatilita_storica(simbolo_base, simbolo_quote, giorni=14)
-        
-        if vol_daily:
-            print(f"Volatilità giornaliera rilevata: {(vol_daily * 100):.2f}%")
-            
-            inf_agg, sup_agg, _ = suggerisci_range_ottimale(prezzo_live, vol_daily, giorni_target=7, z_score=1.0)
-            inf_bil, sup_bil, _ = suggerisci_range_ottimale(prezzo_live, vol_daily, giorni_target=7, z_score=1.5)
-            
-            print("\n--- SUGGERIMENTI RANGE (Orizzonte stimato: 7 giorni) ---")
-            print(f"🔥 Profilo Aggressivo (Z=1.0): {inf_agg} - {sup_agg}")
-            print(f"⚖️ Profilo Bilanciato (Z=1.5): {inf_bil} - {sup_bil}")
+    print("=== TEST METRICHE ===")
+    vol, trend = calcola_metriche_storiche("WETH", "CBBTC", 14)
+    print(f"Volatilità: {vol*100:.2f}% | Trend Asimmetrico: {trend*100:.2f}%")
