@@ -9,6 +9,10 @@ st.set_page_config(page_title="Slipstream Autopilota", page_icon="⚡", layout="
 st.title("Aerodrome Autopilot")
 st.markdown("---")
 
+# --- INIZIALIZZAZIONE VARIABILE DI CONFERMA ELIMINAZIONE ---
+if 'conferma_eliminazione' not in st.session_state:
+    st.session_state['conferma_eliminazione'] = None
+
 # Definiamo le pool preconfigurate per evitare di copiare/incollare indirizzi a mano
 POOLS = {
     "WETH / USDC (Pool Dollaro)": {
@@ -16,8 +20,8 @@ POOLS = {
         "gauge": "0xA0B61fdB9f1FB9b917Fe38b49427Fd4D87472D28"
     },
     "WETH / cbBTC (Cross-Crypto)": {
-        "pool": "0x42d4a22cad0f5a49681a5715ce994af73a43b76b", # Sostituisci con l'indirizzo corretto della pool cbBTC
-        "gauge": "0x61E0B10423a0009C3f83ab4313813d29437d0817" # Inserisci il gauge address se vuoi i dati on-chain base
+        "pool": "0x42d4a22cad0f5a49681a5715ce994af73a43b76b", 
+        "gauge": "0x61E0B10423a0009C3f83ab4313813d29437d0817" 
     }
 }
 
@@ -63,7 +67,6 @@ with st.sidebar:
     st.header("🔧 Opzioni Visualizzazione")
     inverti_prezzo = st.checkbox("🔄 Inverti Prezzo (es. mostra 1 WETH in cbBTC)", value=(simbolo_base.upper()=="CBBTC"))
     
-    # --- NUOVA SEZIONE AGGIUNTA: MONITORAGGI ATTIVI ---
     st.markdown("---")
     st.header("📁 Monitoraggi Attivi")
     posizioni_salvate = portfolio_manager.get_tutte_posizioni()
@@ -75,10 +78,23 @@ with st.sidebar:
             nome_pool_salvata = p_data.get("nome_coppia", "Pool Sconosciuta")
             with st.expander(f"🟢 {nome_pool_salvata}"):
                 st.write(f"Range: {p_data.get('limite_inf', 0):.4f} - {p_data.get('limite_sup', 0):.4f}")
-                if st.button("🗑️ Elimina", key=f"del_{p_id}", type="primary", use_container_width=True):
-                    portfolio_manager.elimina_posizione(p_id)
-                    st.rerun()
-    # --- FINE SEZIONE AGGIUNTA ---
+                
+                # --- BLOCCO CONFERMA ELIMINAZIONE AGGIORNATO ---
+                if st.session_state['conferma_eliminazione'] == p_id:
+                    st.warning("Confermi di voler eliminare?")
+                    col_y, col_n = st.columns(2)
+                    if col_y.button("✔️ Sì", key=f"yes_{p_id}", type="primary"):
+                        portfolio_manager.elimina_posizione(p_id)
+                        st.session_state['conferma_eliminazione'] = None
+                        st.rerun()
+                    if col_n.button("❌ No", key=f"no_{p_id}"):
+                        st.session_state['conferma_eliminazione'] = None
+                        st.rerun()
+                else:
+                    if st.button("🗑️ Elimina", key=f"del_{p_id}", use_container_width=True):
+                        st.session_state['conferma_eliminazione'] = p_id
+                        st.rerun()
+                # --- FINE BLOCCO CONFERMA ---
 
 if inverti_prezzo and live_price > 0:
     live_price = 1 / live_price

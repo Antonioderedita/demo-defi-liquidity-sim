@@ -54,3 +54,14 @@ def get_tutte_posizioni():
     except Exception as e:
         print(f"Errore lettura di tutte le posizioni: {e}")
         return {}
+
+def elimina_posizione(indirizzo_pool):
+    """Elimina definitivamente una posizione da Firebase."""
+    url = f"{FIREBASE_URL}/posizioni/{indirizzo_pool}.json"
+    try:
+        risposta = requests.delete(url, timeout=10)
+        risposta.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"Errore eliminazione Firebase: {e}")
+        return False
