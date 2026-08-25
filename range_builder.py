@@ -53,6 +53,31 @@ def calcola_volatilita_storica(simbolo_base, simbolo_quote="USDC", giorni=14):
         print(f"Errore calcolo volatilità: {e}")
         return 0.03
 
+def calcola_trend_asimmetria(prezzi_storici):
+    """
+    (NUOVA METRICA) Calcola il coefficiente direzionale usando la regressione lineare
+    sui prezzi storici. Restituisce un moltiplicatore di offset (es. 0.02 per +2%).
+    """
+    if not prezzi_storici or len(prezzi_storici) < 2:
+        return 0.0
+        
+    x = np.arange(len(prezzi_storici))
+    y = np.array(prezzi_storici)
+    
+    # Regressione lineare sui prezzi
+    m, q = np.polyfit(x, y, 1)
+    
+    if q == 0:
+        return 0.0
+        
+    # Calcolo della variazione percentuale stimata dalla retta lungo tutto il periodo
+    valore_inizio = q
+    valore_fine = (m * (len(prezzi_storici) - 1)) + q
+    trend_perc = (valore_fine - valore_inizio) / valore_inizio
+    
+    # Limitiamo il suggerimento a un massimo di +/- 15% per evitare sbilanciamenti estremi
+    return float(np.clip(trend_perc, -0.15, 0.15))
+
 def calcola_probabilita_no_touch(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
     """
     (NUOVA METRICA) Calcola la probabilità che il prezzo NON tocchi MAI i limiti 
@@ -101,15 +126,16 @@ def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_gi
     probabilita = cdf_b - cdf_a
     return max(0.0, probabilita) * 100
 
-def suggerisci_range_ottimale(prezzo_attuale, volatilita_giornaliera, giorni_target=7, z_score=1.5):
+def suggerisci_range_ottimale(prezzo_attuale, volatilita_giornaliera, giorni_target=7, z_score=1.5, offset_asimmetria=0.0):
     """
-    Calcola i limiti inferiore e superiore basati sulla probabilità statistica.
-    z_score = 1.5 copre circa l'86% degli scenari possibili (ottimo compromesso rischio/rendimento per DeFi).
+    Calcola i limiti inferiore e superiore basati sulla probabilità statistica,
+    con la possibilità di applicare uno spostamento asimmetrico basato sul trend.
     """
     volatilita_periodo = volatilita_giornaliera * np.sqrt(giorni_target)
     
-    limite_inf = prezzo_attuale * (1 - (z_score * volatilita_periodo))
-    limite_sup = prezzo_attuale * (1 + (z_score * volatilita_periodo))
+    # L'offset sposta il baricentro del range
+    limite_inf = prezzo_attuale * (1 - (z_score * volatilita_periodo) + offset_asimmetria)
+    limite_sup = prezzo_attuale * (1 + (z_score * volatilita_periodo) + offset_asimmetria)
     
     # FIX: Arrotondamento portato a 6 cifre per gestire i micro-rapporti (es. ETH/BTC = 0.0385)
     return round(limite_inf, 6), round(limite_sup, 6), volatilita_periodo

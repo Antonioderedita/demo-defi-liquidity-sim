@@ -49,6 +49,10 @@ def fetch_live_data(address):
 def fetch_volatility(s_base, s_quote):
     return range_builder.calcola_volatilita_storica(s_base, s_quote, giorni=14)
 
+@st.cache_data(ttl=3600)
+def fetch_historical_prices(address):
+    return data_fetcher.get_historical_prices(address, days=14)
+
 # --- FASE DI RECUPERO DATI ---
 pool_data = fetch_live_data(indirizzo_pool)
 if not pool_data:
@@ -96,20 +100,27 @@ with st.sidebar:
                         st.rerun()
                 # --- FINE BLOCCO CONFERMA ---
 
+# Estrazione dello storico prezzi PRIMA di invertire la stringa della coppia
+storico_prezzi = fetch_historical_prices(indirizzo_pool)
+
 if inverti_prezzo and live_price > 0:
     live_price = 1 / live_price
     nome_coppia = f"{simbolo_quote}/{simbolo_base}"
     simbolo_base, simbolo_quote = simbolo_quote, simbolo_base
+    # Se il prezzo è invertito, capovolgiamo anche l'array dello storico per il calcolo del trend
+    if storico_prezzi:
+        storico_prezzi = [1/p for p in storico_prezzi if p > 0]
 
 valuta_ui = "$" if simbolo_quote.upper() in ["USDC", "USD"] else simbolo_quote.upper()
 vol_daily = fetch_volatility(simbolo_base, simbolo_quote)
+trend_suggerito = range_builder.calcola_trend_asimmetria(storico_prezzi) if storico_prezzi else 0.0
 
 # --- HEADER INFORMAZIONI DI MERCATO ---
-col_m1, col_m2 = st.columns(2)
+col_m1, col_m2, col_m3 = st.columns(3)
 col_m1.metric("Mercato Live", nome_coppia, f"{live_price:.6f} {valuta_ui}")
 col_m2.metric("Volatilità (14d)", f"{(vol_daily*100):.2f}%")
+col_m3.metric("Trend Stimato", f"{(trend_suggerito*100):.2f}%")
 st.markdown("---")
-
 
 # --- CREAZIONE SCHEDE PRINCIPALI ---
 tab_setup, tab_live = st.tabs(["🎯 Configura Ingresso", "📊 Dashboard Monitoraggio"])
@@ -122,14 +133,25 @@ with tab_setup:
         
         st.markdown("---")
         st.markdown("**🛡️ Strategia Statistica (Z-Score)**")
-        # NUOVO CONTROLLO Z-SCORE
+        # CONTROLLO Z-SCORE
         z_score_scelto = st.slider(
             "Ampiezza del range (1.0 = Aggressivo, 1.5 = Bilanciato, 2.0 = Conservativo)", 
             min_value=0.0, max_value=4.0, value=1.5, step=0.1
         )
         
-        # Calcolo dinamico basato sulla scelta dello slider
-        inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, giorni_target=14, z_score=z_score_scelto)
+        # NUOVO CONTROLLO ASIMMETRIA
+        st.markdown("**📈 Direzione Trend (Asimmetria)**")
+        st.caption(f"Sposta il baricentro del range basandoti sul trend storico.")
+        offset_scelto_perc = st.slider(
+            "Offset asimmetrico (%) [0 = Simmetrico]", 
+            min_value=-20.0, max_value=20.0, value=float(trend_suggerito * 100), step=0.5
+        )
+        offset_scelto = offset_scelto_perc / 100.0
+        
+        # Calcolo dinamico basato sulla scelta degli slider
+        inf_bil, sup_bil, _ = range_builder.suggerisci_range_ottimale(
+            live_price, vol_daily, giorni_target=14, z_score=z_score_scelto, offset_asimmetria=offset_scelto
+        )
         
         step_val = 5.0 if valuta_ui == "$" else 0.00001
         formato = "%.2f" if valuta_ui == "$" else "%.6f"

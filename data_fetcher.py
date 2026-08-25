@@ -86,3 +86,33 @@ def get_apr_from_web3(gauge_address, tvl_pool_usd):
     except Exception as e:
         print(f"Errore lettura Web3: {e}")
         return None
+
+def get_historical_prices(pair_address, days=14):
+    """
+    Recupera i prezzi di chiusura storici (giornalieri) usando GeckoTerminal API.
+    Restituisce un array ordinato dal più vecchio al più recente.
+    """
+    url = f"https://api.geckoterminal.com/api/v2/networks/base/pools/{pair_address}/ohlcv/day?limit={days}"
+    
+    try:
+        headers = {'Accept': 'application/json'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        ohlcv_list = data.get('data', {}).get('attributes', {}).get('ohlcv_list', [])
+        if not ohlcv_list:
+            return None
+        
+        # Formato ohlcv_list: [timestamp, open, high, low, close, volume]
+        # Estraiamo l'indice 4 (chiusura)
+        chiusure = [float(giorno[4]) for giorno in ohlcv_list]
+        
+        # L'API di Gecko restituisce i dati dal più recente al più vecchio. Li invertiamo.
+        chiusure.reverse()
+        
+        return chiusure
+        
+    except Exception as e:
+        print(f"Errore API GeckoTerminal (Storico): {e}")
+        return None
