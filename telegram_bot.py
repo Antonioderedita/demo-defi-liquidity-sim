@@ -18,8 +18,9 @@ def invia_messaggio_telegram(testo):
     }
     requests.post(url, json=payload, timeout=10)
 
-def aggiorna_flag_firebase(indirizzo_pool, payload):
-    url = f"{FIREBASE_URL}/posizioni/{indirizzo_pool}.json"
+def aggiorna_flag_firebase(p_id, payload):
+    # La chiave nel database ora è p_id (l'ID univoco UUID o il vecchio indirizzo)
+    url = f"{FIREBASE_URL}/posizioni/{p_id}.json"
     requests.patch(url, json=payload, timeout=10)
 
 def esegui_controllo_posizioni():
@@ -31,9 +32,17 @@ def esegui_controllo_posizioni():
         print("❌ Nessuna posizione trovata nel JSON/Database.")
         return
 
-    for indirizzo_pool, pos in posizioni.items():
+    # Sostituito indirizzo_pool con p_id perché la chiave ora è l'ID
+    for p_id, pos in posizioni.items():
+        # Estrae l'indirizzo vero della pool. Se è un vecchio salvataggio usa p_id
+        indirizzo_pool = pos.get("indirizzo_pool", p_id if str(p_id).startswith("0x") else "")
+        
+        if not indirizzo_pool:
+            print(f"❌ Errore: indirizzo smart contract mancante per la posizione {p_id}.")
+            continue
+
         nome_coppia = pos.get("nome_coppia", "Sconosciuta")
-        print(f"\n🔎 Analizzo pool: {nome_coppia} ({indirizzo_pool})")
+        print(f"\n🔎 Analizzo pool: {nome_coppia} (ID: {p_id[:8]})")
         
         pool_data = data_fetcher.get_pool_data_by_address(indirizzo_pool)
         if not pool_data:
@@ -90,6 +99,7 @@ def esegui_controllo_posizioni():
                 testo = (
                     f"🚨 <b>ATTENZIONE: FUORI RANGE CRITICO</b> 🚨\n\n"
                     f"<b>Pool:</b> {nome_coppia}\n"
+                    f"<b>ID Monitoraggio:</b> {p_id[:8]}\n"
                     f"Prezzo attuale: {live_price:.6f} {valuta_ui}\n"
                     f"Range: {p_a:.6f} - {p_b:.6f}\n\n"
                     f"💸 <b>Metriche Posizione:</b>\n"
@@ -99,7 +109,8 @@ def esegui_controllo_posizioni():
                 )
                 
                 invia_messaggio_telegram(testo)
-                aggiorna_flag_firebase(indirizzo_pool, {"allarme_inviato": True, "pre_allarme_inviato": False})
+                # Passiamo p_id per aggiornare i flag sul corretto ID
+                aggiorna_flag_firebase(p_id, {"allarme_inviato": True, "pre_allarme_inviato": False})
                 print("✅ Allarme CRITICO inviato.")
             else:
                 print("🛑 Già fuori range. Nessun blocco spam.")
@@ -108,19 +119,20 @@ def esegui_controllo_posizioni():
             if not pre_allarme_gia_inviato:
                 testo = (
                     f"⚠️ <b>PRE-ALLARME PROSSIMITÀ: {nome_coppia}</b> ⚠️\n\n"
+                    f"<b>ID Monitoraggio:</b> {p_id[:8]}\n"
                     f"Il prezzo di {live_price:.6f} {valuta_ui} è arrivato al <b>{dist_minima:.1f}%</b> dal limite del range.\n"
                     f"Range impostato: {p_a:.6f} - {p_b:.6f}\n\n"
                     f"<i>Preparati a valutare un riposizionamento se il trend continua.</i>"
                 )
                 invia_messaggio_telegram(testo)
-                aggiorna_flag_firebase(indirizzo_pool, {"pre_allarme_inviato": True, "allarme_inviato": False})
+                aggiorna_flag_firebase(p_id, {"pre_allarme_inviato": True, "allarme_inviato": False})
                 print("✅ Pre-Allarme 5% inviato.")
             else:
                 print("🛑 Già in zona pre-allarme. Nessun messaggio ripetuto.")
                 
         else:
             if allarme_gia_inviato or pre_allarme_gia_inviato:
-                aggiorna_flag_firebase(indirizzo_pool, {"allarme_inviato": False, "pre_allarme_inviato": False})
+                aggiorna_flag_firebase(p_id, {"allarme_inviato": False, "pre_allarme_inviato": False})
                 print("✅ Prezzo rientrato in ZONA SICURA. Status allarmi resettati.")
             else:
                 print("🟢 Prezzo in zona sicura. Nessuna azione richiesta.")
