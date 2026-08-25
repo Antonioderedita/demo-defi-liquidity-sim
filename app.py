@@ -156,63 +156,82 @@ with tab_setup:
             st.success(f"Posizione fissata per {nome_coppia}! Passa alla Dashboard.")
 
 with tab_live:
-    pos = portfolio_manager.get_posizione(indirizzo_pool)
+    tutte_le_posizioni = portfolio_manager.get_tutte_posizioni()
     
-    if not pos:
+    # Filtriamo per raccogliere solo le posizioni della pool attualmente selezionata
+    posizioni_correnti = {}
+    if tutte_le_posizioni:
+        for p_id, p_data in tutte_le_posizioni.items():
+            # Controllo di retrocompatibilità: gestisce vecchi salvataggi (indirizzo pool) e nuovi (ID uuid)
+            ind_salvato = p_data.get("indirizzo_pool", p_id if str(p_id).startswith("0x") else "")
+            if ind_salvato.lower() == indirizzo_pool.lower():
+                posizioni_correnti[p_id] = p_data
+
+    if not posizioni_correnti:
         st.info("Nessuna posizione salvata per questa pool. Vai in 'Configura Ingresso' per iniziare.")
     else:
-        cap_in = pos["capitale_iniziale"]
-        p_in = pos["prezzo_ingresso"]
-        p_a = pos["limite_inf"]
-        p_b = pos["limite_sup"]
-        apr_salvato = pos["apr_ingresso"]
-        timestamp_in = pos.get("timestamp", time.time())
-        
-        giorni_reali_trascorsi = max(0.0001, (time.time() - timestamp_in) / 86400.0)
-        
-        L = core_math.get_liquidity_for_capital(cap_in, p_in, p_a, p_b)
-        il_perc, il_usd, lp_value = core_math.calculate_impermanent_loss(L, live_price, p_in, p_a, p_b)
-        
-        fee_day_attuali = (cap_in * (apr_salvato / 100)) / 365
-        
-        st.subheader(f"⏱️ Posizione Attiva: {nome_coppia}")
-        st.caption(f"Aperta da {giorni_reali_trascorsi:.2f} giorni. APR Impostato: {apr_salvato}%")
-        
-        col_pos1, col_pos2, col_pos3 = st.columns(3)
-        col_pos1.metric("Capitale Investito", f"{cap_in:.2f} $")
-        col_pos2.metric("Limite Inferiore", f"{p_a:.6f} {valuta_ui}")
-        col_pos3.metric("Limite Superiore", f"{p_b:.6f} {valuta_ui}")
-        
+        st.subheader(f"⏱️ Posizioni Attive: {nome_coppia}")
         st.markdown("<br>", unsafe_allow_html=True)
-
-        fee_maturate_reali = fee_day_attuali * giorni_reali_trascorsi
-        profitto_netto_reale = fee_maturate_reali - il_usd
         
-        cr1, cr2, cr3 = st.columns(3)
-        cr1.metric("Prezzo Attuale", f"{live_price:.6f} {valuta_ui}", f"vs Ingresso: {(live_price - p_in):.6f} {valuta_ui}")
-        cr2.metric("Impermanent Loss Reale", f"- {il_usd:.2f} $")
-        cr3.metric("Profitto Netto Stimato", f"{profitto_netto_reale:.2f} $", f"Fee incassate (Stima): +{fee_maturate_reali:.2f}$")
-        
-        st.markdown("---")
-        
-        prob_live_in_range = range_builder.calcola_probabilita_in_range(live_price, p_a, p_b, vol_daily, giorni_target=14)
-        prob_live_no_touch = range_builder.calcola_probabilita_no_touch(live_price, p_a, p_b, vol_daily, giorni_target=14)
-
-        col_proj, col_prob = st.columns(2)
-        
-        with col_proj:
-            st.subheader("🔮 Proiezioni (Forecast)")
-            st.caption(f"Assumendo che il prezzo resti nel range")
-            st.metric("Prossime 24 Ore", f"+ {fee_day_attuali:.2f} $")
-            st.metric("Prossimi 7 Giorni", f"+ {(fee_day_attuali * 7):.2f} $")
-            st.metric("Prossimi 30 Giorni", f"+ {(fee_day_attuali * 30):.2f} $")
+        for p_id, pos in posizioni_correnti.items():
+            # Titolo scheda differenziato per vecchi e nuovi salvataggi
+            titolo = "Principale (Vecchia)" if str(p_id).startswith("0x") else f"ID: {p_id}"
+            st.markdown(f"#### 🔹 Monitoraggio {titolo}")
             
-        with col_prob:
-            st.subheader("🎯 Stato di Sicurezza (Prox 14gg)")
-            st.caption("Ricalcolato in base al prezzo live odierno")
-            st.metric("Probabilità di rimanere nel range", f"{prob_live_in_range:.1f}%")
-            st.metric("Probabilità di non toccare i bordi", f"{prob_live_no_touch:.1f}%")
-            if prob_live_in_range < 50:
-                st.warning("La probabilità di uscire dal range è elevata. Tieni d'occhio Telegram.")
-            else:
-                st.success("La posizione è statisticamente solida.")
+            cap_in = pos.get("capitale_iniziale", 0)
+            p_in = pos.get("prezzo_ingresso", live_price)
+            p_a = pos["limite_inf"]
+            p_b = pos["limite_sup"]
+            apr_salvato = pos.get("apr_ingresso", 0)
+            timestamp_in = pos.get("timestamp", time.time())
+            
+            giorni_reali_trascorsi = max(0.0001, (time.time() - timestamp_in) / 86400.0)
+            
+            L = core_math.get_liquidity_for_capital(cap_in, p_in, p_a, p_b)
+            il_perc, il_usd, lp_value = core_math.calculate_impermanent_loss(L, live_price, p_in, p_a, p_b)
+            
+            fee_day_attuali = (cap_in * (apr_salvato / 100)) / 365
+            
+            st.caption(f"Aperta da {giorni_reali_trascorsi:.2f} giorni. APR Impostato: {apr_salvato}%")
+            
+            col_pos1, col_pos2, col_pos3 = st.columns(3)
+            col_pos1.metric("Capitale Investito", f"{cap_in:.2f} $")
+            col_pos2.metric("Limite Inferiore", f"{p_a:.6f} {valuta_ui}")
+            col_pos3.metric("Limite Superiore", f"{p_b:.6f} {valuta_ui}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            fee_maturate_reali = fee_day_attuali * giorni_reali_trascorsi
+            profitto_netto_reale = fee_maturate_reali - il_usd
+            
+            cr1, cr2, cr3 = st.columns(3)
+            cr1.metric("Prezzo Attuale", f"{live_price:.6f} {valuta_ui}", f"vs Ingresso: {(live_price - p_in):.6f} {valuta_ui}")
+            cr2.metric("Impermanent Loss Reale", f"- {il_usd:.2f} $")
+            cr3.metric("Profitto Netto Stimato", f"{profitto_netto_reale:.2f} $", f"Fee incassate (Stima): +{fee_maturate_reali:.2f}$")
+            
+            st.markdown("---")
+            
+            prob_live_in_range = range_builder.calcola_probabilita_in_range(live_price, p_a, p_b, vol_daily, giorni_target=14)
+            prob_live_no_touch = range_builder.calcola_probabilita_no_touch(live_price, p_a, p_b, vol_daily, giorni_target=14)
+
+            col_proj, col_prob = st.columns(2)
+            
+            with col_proj:
+                st.subheader("🔮 Proiezioni (Forecast)")
+                st.caption(f"Assumendo che il prezzo resti nel range")
+                st.metric("Prossime 24 Ore", f"+ {fee_day_attuali:.2f} $")
+                st.metric("Prossimi 7 Giorni", f"+ {(fee_day_attuali * 7):.2f} $")
+                st.metric("Prossimi 30 Giorni", f"+ {(fee_day_attuali * 30):.2f} $")
+                
+            with col_prob:
+                st.subheader("🎯 Stato di Sicurezza (Prox 14gg)")
+                st.caption("Ricalcolato in base al prezzo live odierno")
+                st.metric("Probabilità di rimanere nel range", f"{prob_live_in_range:.1f}%")
+                st.metric("Probabilità di non toccare i bordi", f"{prob_live_no_touch:.1f}%")
+                if prob_live_in_range < 50:
+                    st.warning("La probabilità di uscire dal range è elevata. Tieni d'occhio Telegram.")
+                else:
+                    st.success("La posizione è statisticamente solida.")
+            
+            # Linea di separazione robusta se ci sono più posizioni
+            st.markdown("<hr style='border: 2px solid #ccc; border-radius: 5px;' />", unsafe_allow_html=True)
