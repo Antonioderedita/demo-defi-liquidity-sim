@@ -123,11 +123,7 @@ with tab_setup:
     
     dati_grafico = fetch_chart_data(simbolo_base, simbolo_quote, periodi_mappa[scelta_label])
     if not dati_grafico.empty:
-        # Applica l'inversione di prezzo se attivata dalla sidebar
-        if inverti_prezzo:
-            dati_grafico = 1 / dati_grafico
-            
-        # Aggiunta sicura del prezzo LIVE per evitare il bug di conversione temporale di Pandas
+        # Aggiunta sicura del prezzo LIVE (i simboli sono già stati invertiti a monte, non serve 1/dati_grafico)
         now = pd.Timestamp.now(tz=dati_grafico.index.tz)
         nuovo_punto = pd.Series({now: float(live_price)})
         dati_grafico = pd.concat([dati_grafico, nuovo_punto])
