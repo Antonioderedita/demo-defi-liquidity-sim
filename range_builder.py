@@ -43,7 +43,7 @@ def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
         log_ret = np.log(prezzi / prezzi.shift(1)).dropna()
         volatilita_giornaliera = float(np.std(log_ret))
         
-        # 2. Calcolo Trend (Regressione Lineare sugli ultimi N giorni)
+        # 2. Calcolo Trend (Regressione Lineare)
         y = prezzi.values[-giorni:] 
         if len(y) < 2:
             return volatilita_giornaliera, 0.0
@@ -69,7 +69,7 @@ def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
 def get_chart_data(simbolo_base, simbolo_quote="USDC", periodo="1mo"):
     """
     Recupera i dati storici per il grafico interattivo in Streamlit.
-    Supporta periodi come '1mo', '6mo', '1y', 'max'.
+    Applica un timeframe intelligente (5m, 1h, 1d) in base all'orizzonte scelto.
     """
     mappa_ticker = {
         "WETH": "ETH-USD",
@@ -84,15 +84,28 @@ def get_chart_data(simbolo_base, simbolo_quote="USDC", periodo="1mo"):
     ticker_base = mappa_ticker.get(simbolo_base.upper(), f"{simbolo_base.upper()}-USD")
     ticker_quote = mappa_ticker.get(simbolo_quote.upper(), f"{simbolo_quote.upper()}-USD")
     
+    # Mappatura intelligente dei periodi e intervalli di Yahoo Finance
+    config_temporale = {
+        "1d": {"period": "1d", "interval": "5m"},
+        "1w": {"period": "5d", "interval": "1h"}, # 5d è il formato più stabile per le API yfinance sulle ore
+        "1mo": {"period": "1mo", "interval": "1d"},
+        "6mo": {"period": "6mo", "interval": "1d"},
+        "1y": {"period": "1y", "interval": "1d"},
+        "5y": {"period": "5y", "interval": "1d"},
+        "max": {"period": "max", "interval": "1d"}
+    }
+    
+    cfg = config_temporale.get(periodo, {"period": "1mo", "interval": "1d"})
+    
     try:
         is_stablecoin = simbolo_quote.upper() in ["USDC", "USDT", "USD", "DAI", "EURC"]
         
         if is_stablecoin:
-            storico = yf.download(ticker_base, period=periodo, interval="1d", progress=False)
+            storico = yf.download(ticker_base, period=cfg["period"], interval=cfg["interval"], progress=False)
             prezzi = storico['Close'].dropna().squeeze()
         else:
-            storico_base = yf.download(ticker_base, period=periodo, interval="1d", progress=False)
-            storico_quote = yf.download(ticker_quote, period=periodo, interval="1d", progress=False)
+            storico_base = yf.download(ticker_base, period=cfg["period"], interval=cfg["interval"], progress=False)
+            storico_quote = yf.download(ticker_quote, period=cfg["period"], interval=cfg["interval"], progress=False)
             
             if storico_base.empty or storico_quote.empty:
                 return pd.Series(dtype=float)
@@ -142,23 +155,11 @@ def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_gi
     return max(0.0, probabilita) * 100
 
 def suggerisci_range_ottimale(prezzo_attuale, volatilita_giornaliera, giorni_target=7, z_score=1.5, offset_asimmetria=0.0):
-    """
-    Calcola i limiti inferiore e superiore.
-    L'offset sposta il baricentro del range senza dilatarlo, mantenendo intatto l'APR potenziale.
-    """
     volatilita_periodo = volatilita_giornaliera * np.sqrt(giorni_target)
     buffer_sicurezza = z_score * volatilita_periodo
     
-    # Trasliamo il centro del range in base al trend atteso (es: prezzo + 8%)
     centro_traslato = prezzo_attuale * (1 + offset_asimmetria)
-    
-    # Costruiamo il range simmetrico attorno al NUOVO centro traslato
     limite_inf = centro_traslato * (1 - buffer_sicurezza)
     limite_sup = centro_traslato * (1 + buffer_sicurezza)
     
     return round(limite_inf, 6), round(limite_sup, 6), volatilita_periodo
-
-if __name__ == "__main__":
-    print("=== TEST METRICHE E CHART ===")
-    vol, trend = calcola_metriche_storiche("WETH", "CBBTC", 14)
-    print(f"Volatilità: {vol*100:.2f}% | Trend Asimmetrico: {trend*100:.2f}%")

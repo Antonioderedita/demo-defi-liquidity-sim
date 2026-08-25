@@ -4,6 +4,7 @@ import data_fetcher
 import range_builder
 import core_math
 import portfolio_manager
+import numpy as np
 
 st.set_page_config(page_title="Slipstream Autopilota", page_icon="⚡", layout="wide")
 st.title("Aerodrome Autopilot")
@@ -110,18 +111,17 @@ st.markdown("---")
 tab_setup, tab_live = st.tabs(["🎯 Configura Ingresso", "📊 Dashboard Monitoraggio"])
 
 with tab_setup:
-    # --- SEZIONE GRAFICO INTERATTIVO ---
+    # --- 1. ZONA GRAFICO INTERATTIVO ---
     st.subheader(f"📈 Analisi Andamento: {nome_coppia}")
-    selezione_periodo = st.select_slider(
-        "Seleziona orizzonte temporale del grafico:",
-        options=["1mo", "6mo", "1y", "max"],
-        value="1mo",
-        format_func=lambda x: {"1mo": "1 Mese", "6mo": "6 Mesi", "1y": "1 Anno", "max": "Massimo"}[x]
-    )
     
-    dati_grafico = fetch_chart_data(simbolo_base, simbolo_quote, selezione_periodo)
+    periodi_mappa = {
+        "1 Giorno": "1d", "1 Settimana": "1w", "1 Mese": "1mo", 
+        "6 Mesi": "6mo", "1 Anno": "1y", "5 Anni": "5y", "Max": "max"
+    }
+    scelta_label = st.radio("Seleziona Orizzonte Temporale:", list(periodi_mappa.keys()), horizontal=True, index=2)
+    
+    dati_grafico = fetch_chart_data(simbolo_base, simbolo_quote, periodi_mappa[scelta_label])
     if not dati_grafico.empty:
-        # Applica l'inversione del prezzo anche al grafico se l'utente l'ha selezionata nella sidebar
         if inverti_prezzo:
             dati_grafico = 1 / dati_grafico
         st.line_chart(dati_grafico, use_container_width=True)
@@ -130,50 +130,65 @@ with tab_setup:
         
     st.markdown("---")
     
-    # --- SEZIONE CONTROLLO MASTER ---
-    st.subheader("🛡️ Gestione del Rischio Globale")
-    capitale = st.number_input("Capitale da investire (Controvalore in USD)", min_value=0.01, value=100.0, step=10.0)
-    z_score_scelto = st.slider(
-        "Master Z-Score (Ampiezza del cuscinetto di sicurezza)", 
-        min_value=0.0, max_value=4.0, value=1.5, step=0.1
-    )
-    apr_manuale = st.number_input("APR Concentrato Stimato % (letto su Aerodrome)", min_value=0.0, value=25.0, step=1.0)
-    fee_day_stimate = (capitale * (apr_manuale / 100)) / 365
+    # --- 2. ZONA MASTER CONTROLS E CONSIGLI ---
+    st.subheader("🛡️ Calibrazione Modello Matematico")
+    
+    col_c1, col_c2, col_c3 = st.columns(3)
+    with col_c1:
+        capitale = st.number_input("Capitale (USD)", min_value=0.01, value=100.0, step=10.0)
+    with col_c2:
+        z_score_scelto = st.slider("Master Z-Score (Cuscinetto di Sicurezza)", min_value=0.5, max_value=4.0, value=1.5, step=0.1)
+    with col_c3:
+        apr_manuale = st.number_input("APR Concentrato % Stimato", min_value=0.0, value=25.0, step=1.0)
+        fee_day_stimate = (capitale * (apr_manuale / 100)) / 365
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Calcolo Scenari
+    inf_sim, sup_sim, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, 14, z_score_scelto, 0.0)
+    inf_asim, sup_asim, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, 14, z_score_scelto, trend_suggerito)
+    
+    col_adv1, col_adv2 = st.columns(2)
+    with col_adv1:
+        st.info(f"**⚖️ Opzione Neutra (Simmetrica):**\n\nCentrato sul prezzo live. Ideale per mercato laterale.\n\n### {inf_sim:.6f} ↔️ {sup_sim:.6f}")
+    with col_adv2:
+        st.success(f"**🚀 Opzione Trend-Adjusted ({(trend_suggerito*100):.2f}%):**\n\nSpostato sul trend a 14gg. Ideale per assecondare la direzione.\n\n### {inf_asim:.6f} ↔️ {sup_asim:.6f}")
     
     st.markdown("---")
     
-    # --- SEZIONE SCENARI A CONFRONTO ---
-    st.subheader("🎯 Scegli la Strategia di Posizionamento")
+    # --- 3. ZONA OPERATIVA E SIMULAZIONE REAL-TIME ---
+    st.subheader("🎯 Imposta Range Finale")
+    st.caption("Usa i consigli qui sopra per impostare i limiti operativi. Le metriche di sicurezza si aggiorneranno in tempo reale.")
     
-    col_simmetrico, col_asimmetrico = st.columns(2)
+    step_val = 5.0 if valuta_ui == "$" else 0.00001
+    formato = "%.2f" if valuta_ui == "$" else "%.6f"
     
-    # Calcolo Range Simmetrico (Offset = 0)
-    inf_sim, sup_sim, _ = range_builder.suggerisci_range_ottimale(
-        live_price, vol_daily, giorni_target=14, z_score=z_score_scelto, offset_asimmetria=0.0
+    price_a, price_b = st.slider(
+        f"Limiti della tua posizione ({valuta_ui})", 
+        min_value=float(live_price*0.5), max_value=float(live_price*1.5), 
+        value=(float(inf_sim), float(sup_sim)), step=step_val, format=formato
     )
     
-    # Calcolo Range Asimmetrico (Offset = Trend)
-    inf_asim, sup_asim, _ = range_builder.suggerisci_range_ottimale(
-        live_price, vol_daily, giorni_target=14, z_score=z_score_scelto, offset_asimmetria=trend_suggerito
-    )
+    # Calcoli Real-Time per lo slider manuale
+    vol_periodo_14 = vol_daily * np.sqrt(14)
+    z_effettivo_inf = abs(live_price - price_a) / live_price / max(vol_periodo_14, 0.0001)
+    z_effettivo_sup = abs(price_b - live_price) / live_price / max(vol_periodo_14, 0.0001)
+    z_effettivo_medio = (z_effettivo_inf + z_effettivo_sup) / 2
     
-    with col_simmetrico:
-        st.markdown("### ⚖️ Opzione Neutra (Simmetrica)")
-        st.caption("Il baricentro del range è centrato sul prezzo di *oggi*. Ideale se ti aspetti un mercato laterale.")
-        st.info(f"**Range:** {inf_sim:.6f} - {sup_sim:.6f}")
-        st.success(f"Fee previste: ~{fee_day_stimate:.2f} $/giorno")
-        if st.button("💾 SALVA SIMMETRICO", use_container_width=True, key="save_sim"):
-            portfolio_manager.salva_posizione(indirizzo_pool, nome_coppia, capitale, inf_sim, sup_sim, live_price, apr_manuale)
-            st.success(f"Posizione Neutra fissata! Passa alla Dashboard.")
-            
-    with col_asimmetrico:
-        st.markdown("### 🚀 Opzione Trend-Adjusted")
-        st.caption(f"Il baricentro è spostato del **{(trend_suggerito*100):.2f}%** in base al trend degli ultimi 14 giorni. Stessa ampiezza, diversa centratura.")
-        st.info(f"**Range:** {inf_asim:.6f} - {sup_asim:.6f}")
-        st.success(f"Fee previste: ~{fee_day_stimate:.2f} $/giorno")
-        if st.button("💾 SALVA ASIMMETRICO", use_container_width=True, key="save_asim"):
-            portfolio_manager.salva_posizione(indirizzo_pool, nome_coppia, capitale, inf_asim, sup_asim, live_price, apr_manuale)
-            st.success(f"Posizione Asimmetrica fissata! Passa alla Dashboard.")
+    prob_in_range = range_builder.calcola_probabilita_in_range(live_price, price_a, price_b, vol_daily, 14)
+    prob_no_touch = range_builder.calcola_probabilita_no_touch(live_price, price_a, price_b, vol_daily, 14)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_rt1, col_rt2, col_rt3, col_rt4 = st.columns(4)
+    col_rt1.metric("Z-Score Effettivo", f"{z_effettivo_medio:.1f}")
+    col_rt2.metric("Probabilità 14gg (In Range)", f"{prob_in_range:.1f}%")
+    col_rt3.metric("Probabilità Sicurezza (No Touch)", f"{prob_no_touch:.1f}%")
+    col_rt4.metric("Fee Giornaliere Stimate", f"~{fee_day_stimate:.2f} $")
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("💾 SALVA E INIZIA MONITORAGGIO", use_container_width=True, type="primary"):
+        portfolio_manager.salva_posizione(indirizzo_pool, nome_coppia, capitale, price_a, price_b, live_price, apr_manuale)
+        st.success(f"Posizione fissata per {nome_coppia}! Passa alla Dashboard di Monitoraggio.")
 
 with tab_live:
     tutte_le_posizioni = portfolio_manager.get_tutte_posizioni()
@@ -228,8 +243,8 @@ with tab_live:
             
             st.markdown("---")
             
-            prob_live_in_range = range_builder.calcola_probabilita_in_range(live_price, p_a, p_b, vol_daily, giorni_target=14)
-            prob_live_no_touch = range_builder.calcola_probabilita_no_touch(live_price, p_a, p_b, vol_daily, giorni_target=14)
+            prob_live_in_range_dashboard = range_builder.calcola_probabilita_in_range(live_price, p_a, p_b, vol_daily, giorni_target=14)
+            prob_live_no_touch_dashboard = range_builder.calcola_probabilita_no_touch(live_price, p_a, p_b, vol_daily, giorni_target=14)
 
             col_proj, col_prob = st.columns(2)
             
@@ -243,9 +258,9 @@ with tab_live:
             with col_prob:
                 st.subheader("🎯 Stato di Sicurezza (Prox 14gg)")
                 st.caption("Ricalcolato in base al prezzo live odierno")
-                st.metric("Probabilità di rimanere nel range", f"{prob_live_in_range:.1f}%")
-                st.metric("Probabilità di non toccare i bordi", f"{prob_live_no_touch:.1f}%")
-                if prob_live_in_range < 50:
+                st.metric("Probabilità di rimanere nel range", f"{prob_live_in_range_dashboard:.1f}%")
+                st.metric("Probabilità di non toccare i bordi", f"{prob_live_no_touch_dashboard:.1f}%")
+                if prob_live_in_range_dashboard < 50:
                     st.warning("La probabilità di uscire dal range è elevata. Tieni d'occhio Telegram.")
                 else:
                     st.success("La posizione è statisticamente solida.")
