@@ -65,8 +65,8 @@ if not pool_data:
 live_price = pool_data['prezzo_nativo']
 nome_coppia = pool_data['coppia_reale']
 simboli = nome_coppia.split('/')
-simbolo_base = simboli[0]
-simbolo_quote = simboli[1] if len(simboli) > 1 else "USDC"
+simbolo_base = simboli[0].strip()
+simbolo_quote = simboli[1].strip() if len(simboli) > 1 else "USDC"
 
 with st.sidebar:
     st.markdown("---")
