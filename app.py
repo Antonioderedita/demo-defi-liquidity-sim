@@ -52,6 +52,11 @@ def fetch_historical_metrics(s_base, s_quote):
 def fetch_chart_data(s_base, s_quote, period):
     return range_builder.get_chart_data(s_base, s_quote, periodo=period)
 
+# --- NUOVA CACHE PER MOTORE MONTE CARLO ---
+@st.cache_data(ttl=3600)
+def fetch_mc_scenarios(prezzo, vol, trend, giorni=14, simulazioni=10000):
+    return range_builder.genera_scenari_montecarlo(prezzo, vol, trend, giorni, simulazioni)
+
 pool_data = fetch_live_data(indirizzo_pool)
 if not pool_data:
     st.error(f"🔴 ERRORE: Nessun dato trovato per l'indirizzo Pool {indirizzo_pool}.")
@@ -103,6 +108,9 @@ if inverti_prezzo and live_price > 0:
 valuta_ui = "$" if simbolo_quote.upper() in ["USDC", "USD"] else simbolo_quote.upper()
 vol_daily, trend_suggerito = fetch_historical_metrics(simbolo_base, simbolo_quote)
 
+# Generazione background dei 10.000 cammini Monte Carlo
+mc_paths = fetch_mc_scenarios(live_price, vol_daily, trend_suggerito, 14, 10000)
+
 col_m1, col_m2, col_m3 = st.columns(3)
 col_m1.metric("Mercato Live", nome_coppia, f"{live_price:.6f} {valuta_ui}")
 col_m2.metric("Volatilità (14d)", f"{(vol_daily*100):.2f}%")
@@ -123,7 +131,6 @@ with tab_setup:
     
     dati_grafico = fetch_chart_data(simbolo_base, simbolo_quote, periodi_mappa[scelta_label])
     if not dati_grafico.empty:
-        # Aggiunta sicura del prezzo LIVE (i simboli sono già stati invertiti a monte, non serve 1/dati_grafico)
         now = pd.Timestamp.now(tz=dati_grafico.index.tz)
         nuovo_punto = pd.Series({now: float(live_price)})
         dati_grafico = pd.concat([dati_grafico, nuovo_punto])
@@ -148,7 +155,6 @@ with tab_setup:
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Calcolo Scenari
     inf_sim, sup_sim, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, 14, z_score_scelto, 0.0)
     inf_asim, sup_asim, _ = range_builder.suggerisci_range_ottimale(live_price, vol_daily, 14, z_score_scelto, trend_suggerito)
     
@@ -162,7 +168,7 @@ with tab_setup:
     
     # --- 3. ZONA OPERATIVA E SIMULAZIONE REAL-TIME ---
     st.subheader("🎯 Imposta Range Finale")
-    st.caption("Usa i consigli qui sopra per impostare i limiti operativi. Le metriche di sicurezza si aggiorneranno in tempo reale.")
+    st.caption("Usa i consigli qui sopra per impostare i limiti operativi. Le metriche di sicurezza si aggiorneranno in tempo reale con 10.000 simulazioni Monte Carlo.")
     
     step_val = 5.0 if valuta_ui == "$" else 0.00001
     formato = "%.2f" if valuta_ui == "$" else "%.6f"
@@ -173,21 +179,30 @@ with tab_setup:
         value=(float(inf_sim), float(sup_sim)), step=step_val, format=formato
     )
     
-    # Calcoli Real-Time per lo slider manuale
+    # Calcoli Real-Time Z-Score implicito
     vol_periodo_14 = vol_daily * np.sqrt(14)
     z_effettivo_inf = abs(live_price - price_a) / live_price / max(vol_periodo_14, 0.0001)
     z_effettivo_sup = abs(price_b - live_price) / live_price / max(vol_periodo_14, 0.0001)
     z_effettivo_medio = (z_effettivo_inf + z_effettivo_sup) / 2
     
-    prob_in_range = range_builder.calcola_probabilita_in_range(live_price, price_a, price_b, vol_daily, 14)
-    prob_no_touch = range_builder.calcola_probabilita_no_touch(live_price, price_a, price_b, vol_daily, 14)
+    # Calcolo Probabilità Real-Time via Monte Carlo
+    risultato_mc = range_builder.valuta_probabilita_mc(mc_paths, live_price, price_a, price_b)
     
     st.markdown("<br>", unsafe_allow_html=True)
     col_rt1, col_rt2, col_rt3, col_rt4 = st.columns(4)
     col_rt1.metric("Z-Score Effettivo", f"{z_effettivo_medio:.1f}")
-    col_rt2.metric("Probabilità 14gg (In Range)", f"{prob_in_range:.1f}%")
-    col_rt3.metric("Probabilità Sicurezza (No Touch)", f"{prob_no_touch:.1f}%")
     col_rt4.metric("Fee Giornaliere Stimate", f"~{fee_day_stimate:.2f} $")
+    
+    # UI Dinamica in base allo stato del range (Dentro/Fuori)
+    if risultato_mc["stato"] == "IN_RANGE":
+        col_rt2.metric("Probabilità 14gg (In Range)", f"{risultato_mc['prob_in_range']}%")
+        col_rt3.metric("Probabilità Sicurezza (No Touch)", f"{risultato_mc['prob_no_touch']}%")
+    elif risultato_mc["stato"] == "OUT_OF_RANGE":
+        col_rt2.metric("Stato Range", "🔴 FUORI RANGE")
+        col_rt3.metric("Probabilità Rientro 14gg", f"{risultato_mc['prob_rientro']}%")
+    else:
+        col_rt2.metric("Errore", "Dati insufficienti")
+        col_rt3.metric("-", "-")
     
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("💾 SALVA E INIZIA MONITORAGGIO", use_container_width=True, type="primary"):
@@ -247,8 +262,8 @@ with tab_live:
             
             st.markdown("---")
             
-            prob_live_in_range_dashboard = range_builder.calcola_probabilita_in_range(live_price, p_a, p_b, vol_daily, giorni_target=14)
-            prob_live_no_touch_dashboard = range_builder.calcola_probabilita_no_touch(live_price, p_a, p_b, vol_daily, giorni_target=14)
+            # Valutazione Live Dashboard via Monte Carlo
+            risultato_mc_dash = range_builder.valuta_probabilita_mc(mc_paths, live_price, p_a, p_b)
 
             col_proj, col_prob = st.columns(2)
             
@@ -261,12 +276,24 @@ with tab_live:
                 
             with col_prob:
                 st.subheader("🎯 Stato di Sicurezza (Prox 14gg)")
-                st.caption("Ricalcolato in base al prezzo live odierno")
-                st.metric("Probabilità di rimanere nel range", f"{prob_live_in_range_dashboard:.1f}%")
-                st.metric("Probabilità di non toccare i bordi", f"{prob_live_no_touch_dashboard:.1f}%")
-                if prob_live_in_range_dashboard < 50:
-                    st.warning("La probabilità di uscire dal range è elevata. Tieni d'occhio Telegram.")
-                else:
-                    st.success("La posizione è statisticamente solida.")
+                st.caption("Basato su 10.000 simulazioni stocastiche (Monte Carlo)")
+                
+                if risultato_mc_dash["stato"] == "IN_RANGE":
+                    st.metric("Probabilità di rimanere nel range", f"{risultato_mc_dash['prob_in_range']}%")
+                    st.metric("Probabilità di non toccare i bordi", f"{risultato_mc_dash['prob_no_touch']}%")
+                    
+                    if risultato_mc_dash['prob_in_range'] < 50:
+                        st.warning("⚠️ Probabilità di uscita elevata. Tieni d'occhio le notifiche Telegram.")
+                    else:
+                        st.success("✔️ La posizione è statisticamente solida.")
+                        
+                elif risultato_mc_dash["stato"] == "OUT_OF_RANGE":
+                    st.metric("Stato Attuale", "🔴 FUORI RANGE")
+                    st.metric("Probabilità stimata di rientro", f"{risultato_mc_dash['prob_rientro']}%")
+                    
+                    if risultato_mc_dash['prob_rientro'] > 50:
+                        st.info("📉 Buone probabilità statistiche di rientro a breve termine.")
+                    else:
+                        st.error("⚠️ Probabilità di rientro molto basse. Valuta il ribilanciamento.")
             
             st.markdown("<hr style='border: 2px solid #ccc; border-radius: 5px;' />", unsafe_allow_html=True)

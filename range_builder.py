@@ -1,6 +1,5 @@
 import yfinance as yf
 import numpy as np
-import math
 import pandas as pd
 
 def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
@@ -84,10 +83,9 @@ def get_chart_data(simbolo_base, simbolo_quote="USDC", periodo="1mo"):
     ticker_base = mappa_ticker.get(simbolo_base.upper(), f"{simbolo_base.upper()}-USD")
     ticker_quote = mappa_ticker.get(simbolo_quote.upper(), f"{simbolo_quote.upper()}-USD")
     
-    # Mappatura intelligente dei periodi e intervalli di Yahoo Finance
     config_temporale = {
         "1d": {"period": "1d", "interval": "5m"},
-        "1w": {"period": "5d", "interval": "1h"}, # 5d è il formato più stabile per le API yfinance sulle ore
+        "1w": {"period": "5d", "interval": "1h"}, 
         "1mo": {"period": "1mo", "interval": "1d"},
         "6mo": {"period": "6mo", "interval": "1d"},
         "1y": {"period": "1y", "interval": "1d"},
@@ -117,42 +115,81 @@ def get_chart_data(simbolo_base, simbolo_quote="USDC", periodo="1mo"):
         print(f"Errore recupero dati grafico: {e}")
         return pd.Series(dtype=float)
 
-
-def calcola_probabilita_no_touch(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
-    if volatilita_giornaliera <= 0 or prezzo_attuale <= 0 or price_a >= price_b:
-        return 0.0
-    if prezzo_attuale <= price_a or prezzo_attuale >= price_b:
-        return 0.0
-
-    vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
-    dist_inf = (prezzo_attuale - price_a) / prezzo_attuale
-    dist_sup = (price_b - prezzo_attuale) / prezzo_attuale
+def genera_scenari_montecarlo(prezzo_attuale, volatilita_giornaliera, trend_periodo, giorni_target=14, num_simulazioni=10000):
+    """
+    Genera 10.000 cammini futuri usando il Moto Browniano Geometrico (GBM).
+    Include il 'drift' (deriva direzionale) basato sul trend storico.
+    """
+    if prezzo_attuale <= 0 or volatilita_giornaliera <= 0:
+        return np.array([])
+        
+    # Drift giornaliero
+    mu_daily = trend_periodo / giorni_target
     
-    z_inf = dist_inf / vol_periodo
-    z_sup = dist_sup / vol_periodo
+    # Matrice degli shock casuali (Z) - 10.000 simulazioni per 14 giorni
+    Z = np.random.standard_normal((giorni_target, num_simulazioni))
     
-    prob_touch_inf = math.erfc(z_inf / math.sqrt(2.0))
-    prob_touch_sup = math.erfc(z_sup / math.sqrt(2.0))
-    prob_no_touch = 1.0 - (prob_touch_inf + prob_touch_sup)
+    # Rendimenti giornalieri simulati
+    daily_returns = np.exp((mu_daily - 0.5 * volatilita_giornaliera**2) + volatilita_giornaliera * Z)
     
-    return max(0.0, prob_no_touch) * 100.0
+    # Generazione dei percorsi di prezzo
+    price_paths = prezzo_attuale * np.cumprod(daily_returns, axis=0)
+    
+    # Aggiungiamo il prezzo di oggi al "giorno 0"
+    prezzo_iniziale_array = np.full((1, num_simulazioni), prezzo_attuale)
+    full_paths = np.vstack([prezzo_iniziale_array, price_paths])
+    
+    return full_paths
 
-def calcola_probabilita_in_range(prezzo_attuale, price_a, price_b, volatilita_giornaliera, giorni_target=7):
-    if volatilita_giornaliera <= 0 or prezzo_attuale <= 0:
-        return 0.0
-
-    vol_periodo = volatilita_giornaliera * math.sqrt(giorni_target)
-    dist_a = (price_a - prezzo_attuale) / prezzo_attuale
-    dist_b = (price_b - prezzo_attuale) / prezzo_attuale
-
-    z_a = dist_a / vol_periodo
-    z_b = dist_b / vol_periodo
-
-    cdf_a = (1.0 + math.erf(z_a / math.sqrt(2.0))) / 2.0
-    cdf_b = (1.0 + math.erf(z_b / math.sqrt(2.0))) / 2.0
-
-    probabilita = cdf_b - cdf_a
-    return max(0.0, probabilita) * 100
+def valuta_probabilita_mc(paths, prezzo_attuale, price_a, price_b):
+    """
+    Analizza i 10.000 scenari e restituisce le probabilità reali.
+    Se siamo nel range: Calcola Sopravvivenza (In Range & No Touch).
+    Se siamo fuori: Calcola Probabilità di Rientro (First Passage Time).
+    """
+    if paths.size == 0 or price_a >= price_b:
+        return {"stato": "ERROR", "prob_in_range": 0.0, "prob_no_touch": 0.0, "prob_rientro": 0.0}
+        
+    num_simulazioni = paths.shape[1]
+    
+    if price_a <= prezzo_attuale <= price_b:
+        # --- SIAMO DENTRO IL RANGE ---
+        # 1. Probabilità In Range (alla fine del periodo)
+        prezzi_finali = paths[-1, :]
+        in_range_finali = np.sum((prezzi_finali >= price_a) & (prezzi_finali <= price_b))
+        prob_in_range = (in_range_finali / num_simulazioni) * 100.0
+        
+        # 2. Probabilità No Touch (non viola mai i bordi durante tutto il cammino)
+        minimi_cammini = np.min(paths, axis=0)
+        massimi_cammini = np.max(paths, axis=0)
+        mai_usciti = np.sum((minimi_cammini >= price_a) & (massimi_cammini <= price_b))
+        prob_no_touch = (mai_usciti / num_simulazioni) * 100.0
+        
+        return {
+            "stato": "IN_RANGE",
+            "prob_in_range": round(prob_in_range, 1),
+            "prob_no_touch": round(prob_no_touch, 1),
+            "prob_rientro": 0.0
+        }
+    else:
+        # --- SIAMO FUORI DAL RANGE ---
+        if prezzo_attuale < price_a:
+            # Siamo sotto al limite: calcoliamo quanti cammini "rimbalzano" toccando il bordo inferiore
+            massimi_cammini = np.max(paths, axis=0)
+            rientrati = np.sum(massimi_cammini >= price_a)
+        else:
+            # Siamo sopra al limite: calcoliamo quanti cammini scendono fino a toccare il bordo superiore
+            minimi_cammini = np.min(paths, axis=0)
+            rientrati = np.sum(minimi_cammini <= price_b)
+            
+        prob_rientro = (rientrati / num_simulazioni) * 100.0
+        
+        return {
+            "stato": "OUT_OF_RANGE",
+            "prob_in_range": 0.0,
+            "prob_no_touch": 0.0,
+            "prob_rientro": round(prob_rientro, 1)
+        }
 
 def suggerisci_range_ottimale(prezzo_attuale, volatilita_giornaliera, giorni_target=7, z_score=1.5, offset_asimmetria=0.0):
     volatilita_periodo = volatilita_giornaliera * np.sqrt(giorni_target)
