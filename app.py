@@ -179,6 +179,23 @@ with tab_setup:
         value=(float(inf_sim), float(sup_sim)), step=step_val, format=formato
     )
     
+    # --- COMPOSIZIONE PORTAFOGLIO RICHIESTA ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("#### ⚖️ Composizione Portafoglio Richiesta")
+    st.caption("Per aprire questa pool senza rimanenze, dovrai avere questa esatta proporzione di controvalore nel tuo wallet:")
+    
+    bilanciamento = core_math.calcola_bilanciamento_token(capitale, live_price, price_a, price_b)
+    val_usd_base = capitale * (bilanciamento["perc_base"] / 100)
+    val_usd_quote = capitale * (bilanciamento["perc_quote"] / 100)
+    
+    col_bil1, col_bil2 = st.columns(2)
+    with col_bil1:
+        st.info(f"**{simbolo_base}**\n\nControvalore da depositare: **{val_usd_base:.2f} $**\n\nPeso nella pool: **{bilanciamento['perc_base']:.1f}%**")
+    with col_bil2:
+        st.info(f"**{simbolo_quote}**\n\nControvalore da depositare: **{val_usd_quote:.2f} $**\n\nPeso nella pool: **{bilanciamento['perc_quote']:.1f}%**")
+    
+    st.markdown("---")
+    
     # Calcoli Real-Time Z-Score implicito
     vol_periodo_14 = vol_daily * np.sqrt(14)
     z_effettivo_inf = abs(live_price - price_a) / live_price / max(vol_periodo_14, 0.0001)
