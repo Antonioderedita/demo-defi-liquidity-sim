@@ -1,31 +1,28 @@
-import json
-import os
 import time
 import requests
 
-FILE_POSIZIONI = "posizioni_attive.json"
 FIREBASE_URL = "https://aerodrome-slipstream-default-rtdb.europe-west1.firebasedatabase.app"
 
-def carica_dati():
-    if os.path.exists(FILE_POSIZIONI):
-        with open(FILE_POSIZIONI, "r") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
-    return {}
-
-def salva_dati(dati):
-    with open(FILE_POSIZIONI, "w") as f:
-        json.dump(dati, f, indent=4)
-        
+def get_tutte_posizioni():
+    """Recupera tutte le posizioni da Firebase filtrando record sporchi."""
+    url = f"{FIREBASE_URL}/posizioni.json"
     try:
-        requests.put(f"{FIREBASE_URL}/posizioni.json", json=dati, timeout=5)
+        risposta = requests.get(url, timeout=10)
+        risposta.raise_for_status()
+        dati_grezzi = risposta.json() or {}
+        
+        # Filtro di sicurezza per scartare vecchi salvataggi anomali
+        posizioni_pulite = {
+            k: v for k, v in dati_grezzi.items() 
+            if v and isinstance(v, dict) and "/" not in str(k) and " " not in str(k)
+        }
+        return posizioni_pulite
     except Exception as e:
-        print(f"Errore Firebase: {e}")
+        print(f"Errore lettura Firebase GET: {e}")
+        return {}
 
 def salva_posizione(indirizzo_pool, nome_coppia, capitale, lim_inf, lim_sup, prezzo_in, apr_in, soglia_allarme=5.0):
-    posizioni = carica_dati()
+    """Aggiunge una nuova posizione su Firebase tramite PATCH senza sovrascrivere il DB."""
     nuovo_id = str(int(time.time()))
     
     nuova_posizione = {
@@ -40,42 +37,26 @@ def salva_posizione(indirizzo_pool, nome_coppia, capitale, lim_inf, lim_sup, pre
         "timestamp": time.time()
     }
     
-    posizioni[nuovo_id] = nuova_posizione
-    salva_dati(posizioni)
+    url = f"{FIREBASE_URL}/posizioni.json"
+    try:
+        # PATCH aggiunge la singola posizione identificata dal suo ID univoco
+        requests.patch(url, json={nuovo_id: nuova_posizione}, timeout=5)
+    except Exception as e:
+        print(f"Errore salvataggio Firebase PATCH: {e}")
 
 def get_posizione(p_id):
+    """Recupera i dati di una posizione specifica."""
     url = f"{FIREBASE_URL}/posizioni/{p_id}.json"
     try:
         risposta = requests.get(url, timeout=10)
         risposta.raise_for_status()
         return risposta.json() 
     except Exception as e:
-        print(f"Errore lettura Firebase: {e}")
+        print(f"Errore lettura posizione singola: {e}")
         return None
 
-def get_tutte_posizioni():
-    url = f"{FIREBASE_URL}/posizioni.json"
-    try:
-        risposta = requests.get(url, timeout=10)
-        risposta.raise_for_status()
-        dati_grezzi = risposta.json() or {}
-        
-        # Filtro per scartare record anomali o chiavi basate sul nome della pool
-        posizioni_pulite = {
-            k: v for k, v in dati_grezzi.items() 
-            if v and isinstance(v, dict) and "/" not in str(k) and " " not in str(k)
-        }
-        return posizioni_pulite
-    except Exception as e:
-        print(f"Errore lettura posizioni: {e}")
-        return {}
-
 def elimina_posizione(p_id):
-    posizioni = carica_dati()
-    if str(p_id) in posizioni:
-        del posizioni[str(p_id)]
-        salva_dati(posizioni)
-        
+    """Elimina definitivamente una posizione da Firebase."""
     url = f"{FIREBASE_URL}/posizioni/{p_id}.json"
     try:
         requests.delete(url, timeout=10)
