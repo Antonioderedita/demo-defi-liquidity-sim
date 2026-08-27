@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Slipstream Autopilot", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Faro | Liquidity Autopilot", page_icon="🧭", layout="wide")
 
 # --- SESSION STATE INITIALIZATION ---
 if 'conferma_eliminazione' not in st.session_state:
@@ -19,7 +19,7 @@ def set_range(inf, sup):
     st.session_state['range_slider_value'] = (float(inf), float(sup))
 
 # --- SIDEBAR & SETUP ---
-st.title("⚡ Aerodrome Autopilot")
+st.title("🧭 Faro | Liquidity Autopilot")
 st.caption("Risk-management copilot for Liquidity Providers")
 
 POOLS = {
