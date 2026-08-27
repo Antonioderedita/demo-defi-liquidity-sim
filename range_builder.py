@@ -4,8 +4,8 @@ import pandas as pd
 
 def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
     """
-    Scarica storico da Yahoo Finance. Calcola volatilità e trend direzionale a 14 giorni.
-    Gestisce automaticamente cross-pair e stablecoin.
+    Scarica storico da Yahoo Finance usando Ticker.history() per maggiore stabilità.
+    Restituisce: (volatilita_giornaliera, trend_reale, trend_limitato_per_math)
     """
     mappa_ticker = {
         "WETH": "ETH-USD",
@@ -24,19 +24,20 @@ def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
         is_stablecoin = simbolo_quote.upper() in ["USDC", "USDT", "USD", "DAI", "EURC"]
         
         if is_stablecoin:
-            storico = yf.download(ticker_base, period=f"{giorni + 5}d", interval="1d", progress=False)
-            prezzi = storico['Close'].dropna().squeeze()
+            # FIX: Ticker().history è immune ai crash di formato di yf.download()
+            storico = yf.Ticker(ticker_base).history(period=f"{giorni + 5}d", interval="1d")
+            prezzi = storico['Close'].dropna()
         else:
-            storico_base = yf.download(ticker_base, period=f"{giorni + 5}d", interval="1d", progress=False)
-            storico_quote = yf.download(ticker_quote, period=f"{giorni + 5}d", interval="1d", progress=False)
+            t_base = yf.Ticker(ticker_base).history(period=f"{giorni + 5}d", interval="1d")
+            t_quote = yf.Ticker(ticker_quote).history(period=f"{giorni + 5}d", interval="1d")
             
-            if storico_base.empty or storico_quote.empty:
-                return 0.03, 0.0
+            if t_base.empty or t_quote.empty:
+                return 0.03, 0.0, 0.0
                 
-            prezzi = (storico_base['Close'].squeeze() / storico_quote['Close'].squeeze()).dropna()
+            prezzi = (t_base['Close'] / t_quote['Close']).dropna()
 
         if prezzi.empty:
-            return 0.03, 0.0
+            return 0.03, 0.0, 0.0
             
         # 1. Calcolo Volatilità
         log_ret = np.log(prezzi / prezzi.shift(1)).dropna()
@@ -45,7 +46,7 @@ def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
         # 2. Calcolo Trend (Regressione Lineare)
         y = prezzi.values[-giorni:] 
         if len(y) < 2:
-            return volatilita_giornaliera, 0.0
+            return volatilita_giornaliera, 0.0, 0.0
             
         x = np.arange(len(y))
         m, q = np.polyfit(x, y, 1)
@@ -59,16 +60,15 @@ def calcola_metriche_storiche(simbolo_base, simbolo_quote="USDC", giorni=14):
             
         trend_limitato = float(np.clip(trend_perc, -0.15, 0.15))
         
-        return volatilita_giornaliera, trend_limitato
+        return volatilita_giornaliera, float(trend_perc), trend_limitato
         
     except Exception as e:
         print(f"Errore calcolo metriche storiche: {e}")
-        return 0.03, 0.0
+        return 0.03, 0.0, 0.0
 
 def get_chart_data(simbolo_base, simbolo_quote="USDC", periodo="1mo"):
     """
-    Recupera i dati storici per il grafico interattivo in Streamlit.
-    Applica un timeframe intelligente (5m, 1h, 1d) in base all'orizzonte scelto.
+    Recupera i dati storici per il grafico interattivo in Streamlit usando yf.Ticker().
     """
     mappa_ticker = {
         "WETH": "ETH-USD",
@@ -99,16 +99,16 @@ def get_chart_data(simbolo_base, simbolo_quote="USDC", periodo="1mo"):
         is_stablecoin = simbolo_quote.upper() in ["USDC", "USDT", "USD", "DAI", "EURC"]
         
         if is_stablecoin:
-            storico = yf.download(ticker_base, period=cfg["period"], interval=cfg["interval"], progress=False)
-            prezzi = storico['Close'].dropna().squeeze()
+            storico = yf.Ticker(ticker_base).history(period=cfg["period"], interval=cfg["interval"])
+            prezzi = storico['Close'].dropna()
         else:
-            storico_base = yf.download(ticker_base, period=cfg["period"], interval=cfg["interval"], progress=False)
-            storico_quote = yf.download(ticker_quote, period=cfg["period"], interval=cfg["interval"], progress=False)
+            t_base = yf.Ticker(ticker_base).history(period=cfg["period"], interval=cfg["interval"])
+            t_quote = yf.Ticker(ticker_quote).history(period=cfg["period"], interval=cfg["interval"])
             
-            if storico_base.empty or storico_quote.empty:
+            if t_base.empty or t_quote.empty:
                 return pd.Series(dtype=float)
                 
-            prezzi = (storico_base['Close'].squeeze() / storico_quote['Close'].squeeze()).dropna()
+            prezzi = (t_base['Close'] / t_quote['Close']).dropna()
             
         return prezzi
     except Exception as e:
@@ -116,50 +116,29 @@ def get_chart_data(simbolo_base, simbolo_quote="USDC", periodo="1mo"):
         return pd.Series(dtype=float)
 
 def genera_scenari_montecarlo(prezzo_attuale, volatilita_giornaliera, trend_periodo, giorni_target=14, num_simulazioni=10000):
-    """
-    Genera 10.000 cammini futuri usando il Moto Browniano Geometrico (GBM).
-    Include il 'drift' (deriva direzionale) basato sul trend storico.
-    """
     if prezzo_attuale <= 0 or volatilita_giornaliera <= 0:
         return np.array([])
         
-    # Drift giornaliero
     mu_daily = trend_periodo / giorni_target
-    
-    # Matrice degli shock casuali (Z) - 10.000 simulazioni per 14 giorni
     Z = np.random.standard_normal((giorni_target, num_simulazioni))
-    
-    # Rendimenti giornalieri simulati
     daily_returns = np.exp((mu_daily - 0.5 * volatilita_giornaliera**2) + volatilita_giornaliera * Z)
-    
-    # Generazione dei percorsi di prezzo
     price_paths = prezzo_attuale * np.cumprod(daily_returns, axis=0)
-    
-    # Aggiungiamo il prezzo di oggi al "giorno 0"
     prezzo_iniziale_array = np.full((1, num_simulazioni), prezzo_attuale)
     full_paths = np.vstack([prezzo_iniziale_array, price_paths])
     
     return full_paths
 
 def valuta_probabilita_mc(paths, prezzo_attuale, price_a, price_b):
-    """
-    Analizza i 10.000 scenari e restituisce le probabilità reali.
-    Se siamo nel range: Calcola Sopravvivenza (In Range & No Touch).
-    Se siamo fuori: Calcola Probabilità di Rientro (First Passage Time).
-    """
     if paths.size == 0 or price_a >= price_b:
         return {"stato": "ERROR", "prob_in_range": 0.0, "prob_no_touch": 0.0, "prob_rientro": 0.0}
         
     num_simulazioni = paths.shape[1]
     
     if price_a <= prezzo_attuale <= price_b:
-        # --- SIAMO DENTRO IL RANGE ---
-        # 1. Probabilità In Range (alla fine del periodo)
         prezzi_finali = paths[-1, :]
         in_range_finali = np.sum((prezzi_finali >= price_a) & (prezzi_finali <= price_b))
         prob_in_range = (in_range_finali / num_simulazioni) * 100.0
         
-        # 2. Probabilità No Touch (non viola mai i bordi durante tutto il cammino)
         minimi_cammini = np.min(paths, axis=0)
         massimi_cammini = np.max(paths, axis=0)
         mai_usciti = np.sum((minimi_cammini >= price_a) & (massimi_cammini <= price_b))
@@ -172,13 +151,10 @@ def valuta_probabilita_mc(paths, prezzo_attuale, price_a, price_b):
             "prob_rientro": 0.0
         }
     else:
-        # --- SIAMO FUORI DAL RANGE ---
         if prezzo_attuale < price_a:
-            # Siamo sotto al limite: calcoliamo quanti cammini "rimbalzano" toccando il bordo inferiore
             massimi_cammini = np.max(paths, axis=0)
             rientrati = np.sum(massimi_cammini >= price_a)
         else:
-            # Siamo sopra al limite: calcoliamo quanti cammini scendono fino a toccare il bordo superiore
             minimi_cammini = np.min(paths, axis=0)
             rientrati = np.sum(minimi_cammini <= price_b)
             
@@ -195,7 +171,11 @@ def suggerisci_range_ottimale(prezzo_attuale, volatilita_giornaliera, giorni_tar
     volatilita_periodo = volatilita_giornaliera * np.sqrt(giorni_target)
     buffer_sicurezza = z_score * volatilita_periodo
     
-    centro_traslato = prezzo_attuale * (1 + offset_asimmetria)
+    # Safety lock dinamico: impedisce allo shift del trend di sputare il prezzo fuori
+    max_shift_consentito = buffer_sicurezza * 0.80
+    offset_effettivo = np.clip(offset_asimmetria, -max_shift_consentito, max_shift_consentito)
+    
+    centro_traslato = prezzo_attuale * (1 + offset_effettivo)
     limite_inf = centro_traslato * (1 - buffer_sicurezza)
     limite_sup = centro_traslato * (1 + buffer_sicurezza)
     

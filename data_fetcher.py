@@ -92,7 +92,9 @@ def get_historical_prices(pair_address, days=14):
     Recupera i prezzi di chiusura storici (giornalieri) usando GeckoTerminal API.
     Restituisce un array ordinato dal più vecchio al più recente.
     """
-    url = f"https://api.geckoterminal.com/api/v2/networks/base/pools/{pair_address}/ohlcv/day?limit={days}"
+    # FIX: GeckoTerminal richiede rigorosamente indirizzi in minuscolo
+    indirizzo_pulito = pair_address.lower()
+    url = f"https://api.geckoterminal.com/api/v2/networks/base/pools/{indirizzo_pulito}/ohlcv/day?limit={days}"
     
     try:
         headers = {'Accept': 'application/json'}
